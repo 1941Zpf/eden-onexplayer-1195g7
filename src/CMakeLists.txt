@@ -25,6 +25,11 @@ if (NIGHTLY_BUILD)
     add_compile_definitions(NIGHTLY_BUILD)
 endif()
 
+if (WIN32)
+    # Avoid windows.h min/max and winsock macro pollution with both MSVC and clang-cl.
+    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
+
 # Set compilation flags
 if (MSVC AND NOT CXX_CLANG)
     set(CMAKE_CONFIGURATION_TYPES Debug Release CACHE STRING "" FORCE)
