@@ -11,6 +11,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Free disk space
         shell: pwsh
@@ -27,16 +29,27 @@ jobs:
       - name: Show tool versions
         shell: pwsh
         run: |
+          Write-Host "Workspace: $env:GITHUB_WORKSPACE"
+          Write-Host "Current directory: $(Get-Location)"
+          git rev-parse HEAD
+          git status --short --branch
           cmake --version
           ninja --version
           Get-Command cl -ErrorAction SilentlyContinue
-          Get-ChildItem -Recurse -Filter build-onexplayer-1195g7-001.ps1
+          Get-ChildItem "$env:GITHUB_WORKSPACE\tools\windows" -Force
+          Test-Path "$env:GITHUB_WORKSPACE\tools\windows\build-onexplayer-1195g7-001.ps1"
 
       - name: Build Eden OneXPlayer 001
         shell: pwsh
         run: |
           Set-ExecutionPolicy -Scope Process Bypass
-          .\tools\windows\build-onexplayer-1195g7-001.ps1
+          $script = Join-Path $env:GITHUB_WORKSPACE "tools\windows\build-onexplayer-1195g7-001.ps1"
+          if (-not (Test-Path $script)) {
+            Write-Host "Repository root listing:"
+            Get-ChildItem $env:GITHUB_WORKSPACE -Force
+            throw "Build script was not found: $script"
+          }
+          & $script
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
