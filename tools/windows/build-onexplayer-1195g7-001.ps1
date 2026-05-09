@@ -10,6 +10,91 @@ $PkgDir = Join-Path $BuildDir "pkg"
 $ArtifactsDir = Join-Path $RootDir "artifacts"
 $ZipPath = Join-Path $ArtifactsDir "Eden-Windows-onexplayer-1195g7-001.zip"
 
+function Invoke-Native {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [Parameter(ValueFromRemainingArguments = $true)]
+        [string[]]$Arguments
+    )
+
+    & $FilePath @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "$FilePath failed with exit code $LASTEXITCODE"
+    }
+}
+
+function Add-DirectoryToPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Directory
+    )
+
+    if ((Test-Path $Directory) -and ($env:PATH -notlike "*$Directory*")) {
+        $env:PATH = "$Directory;$env:PATH"
+        Write-Host "-- Added to PATH: $Directory"
+    }
+}
+
+function Find-GlslangValidator {
+    $CandidateFiles = New-Object System.Collections.Generic.List[string]
+
+    $PathCommand = Get-Command "glslangValidator.exe" -ErrorAction SilentlyContinue
+    if ($PathCommand) {
+        $CandidateFiles.Add($PathCommand.Source)
+    }
+
+    if ($env:VULKAN_SDK) {
+        $CandidateFiles.Add((Join-Path $env:VULKAN_SDK "Bin\glslangValidator.exe"))
+    }
+
+    $SearchRoots = New-Object System.Collections.Generic.List[string]
+    @(
+        "C:\VulkanSDK",
+        "C:\ProgramData\chocolatey\lib\vulkan-sdk"
+    ) | ForEach-Object { $SearchRoots.Add($_) }
+
+    if ($env:ProgramFiles) {
+        $SearchRoots.Add((Join-Path $env:ProgramFiles "VulkanSDK"))
+    }
+
+    $ProgramFilesX86 = [Environment]::GetEnvironmentVariable("ProgramFiles(x86)")
+    if ($ProgramFilesX86) {
+        $SearchRoots.Add((Join-Path $ProgramFilesX86 "VulkanSDK"))
+    }
+
+    foreach ($Root in $SearchRoots) {
+        if (Test-Path $Root) {
+            Get-ChildItem -Path $Root -Filter "glslangValidator.exe" -Recurse -ErrorAction SilentlyContinue |
+                ForEach-Object { $CandidateFiles.Add($_.FullName) }
+        }
+    }
+
+    $Candidate = $CandidateFiles |
+        Where-Object { $_ -and (Test-Path $_) } |
+        Sort-Object -Unique |
+        Select-Object -First 1
+
+    if (-not $Candidate) {
+        throw "glslangValidator.exe was not found. Install the Vulkan SDK or ensure its Bin directory is available."
+    }
+
+    $Candidate = (Resolve-Path $Candidate).Path
+    Add-DirectoryToPath (Split-Path -Parent $Candidate)
+
+    if (-not $env:VULKAN_SDK) {
+        $BinDir = Split-Path -Parent $Candidate
+        $SdkRoot = Split-Path -Parent $BinDir
+        if ((Split-Path -Leaf $BinDir) -ieq "Bin") {
+            $env:VULKAN_SDK = $SdkRoot
+            Write-Host "-- Inferred VULKAN_SDK=$env:VULKAN_SDK"
+        }
+    }
+
+    Write-Host "-- Using glslangValidator: $Candidate"
+    return $Candidate
+}
+
 Push-Location $RootDir
 try {
     & (Join-Path $ScriptDir "load-msvc-env.ps1")
@@ -19,6 +104,8 @@ try {
             throw "$tool was not found in PATH"
         }
     }
+
+    $GlslangValidator = Find-GlslangValidator
 
     New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
     New-Item -ItemType Directory -Force -Path $PkgDir | Out-Null
@@ -34,25 +121,33 @@ try {
         )
     }
 
-    cmake -S . -B $BuildDir -G Ninja `
-        -DCMAKE_BUILD_TYPE=Release `
-        -DENABLE_QT_TRANSLATION=ON `
-        -DUSE_DISCORD_PRESENCE=ON `
-        -DYUZU_USE_BUNDLED_SDL2=ON `
-        -DBUILD_TESTING=OFF `
-        -DYUZU_TESTS=OFF `
-        -DDYNARMIC_TESTS=OFF `
-        -DYUZU_CMD=OFF `
-        -DYUZU_ROOM_STANDALONE=OFF `
-        -DYUZU_USE_QT_MULTIMEDIA=OFF `
-        -DYUZU_USE_QT_WEB_ENGINE=OFF `
-        -DYUZU_USE_BUNDLED_QT=ON `
-        -DENABLE_LTO=ON `
-        @compilerArgs
+    $CMakeConfigureArgs = @(
+        "-S", ".",
+        "-B", $BuildDir,
+        "-G", "Ninja",
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DENABLE_QT_TRANSLATION=ON",
+        "-DUSE_DISCORD_PRESENCE=ON",
+        "-DYUZU_USE_BUNDLED_SDL2=ON",
+        "-DBUILD_TESTING=OFF",
+        "-DYUZU_TESTS=OFF",
+        "-DDYNARMIC_TESTS=OFF",
+        "-DYUZU_CMD=OFF",
+        "-DYUZU_ROOM_STANDALONE=OFF",
+        "-DYUZU_USE_QT_MULTIMEDIA=OFF",
+        "-DYUZU_USE_QT_WEB_ENGINE=OFF",
+        "-DYUZU_USE_BUNDLED_QT=ON",
+        "-DENABLE_LTO=ON",
+        "-DGLSLANGVALIDATOR=$GlslangValidator"
+    ) + $compilerArgs
 
-    cmake --build $BuildDir --config Release
+    Invoke-Native "cmake" @CMakeConfigureArgs
+    Invoke-Native "cmake" "--build" $BuildDir "--config" "Release"
 
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $BuildDir "bin\*.pdb")
+    if (-not (Test-Path (Join-Path $BuildDir "bin"))) {
+        throw "Build output directory was not found: $(Join-Path $BuildDir "bin")"
+    }
     Copy-Item -Force (Join-Path $BuildDir "bin\*") $PkgDir
     Copy-Item -Force (Join-Path $RootDir "LICENSE.txt") $PkgDir
     Copy-Item -Force (Join-Path $RootDir "README.md") $PkgDir
@@ -70,7 +165,7 @@ try {
         throw "WINDEPLOYQT is not set and windeployqt.exe was not found under the repository"
     }
 
-    & $WinDeployQt --release --no-compiler-runtime --no-opengl-sw --no-system-dxc-compiler --no-system-d3d-compiler --dir $PkgDir (Join-Path $PkgDir "eden.exe")
+    Invoke-Native $WinDeployQt "--release" "--no-compiler-runtime" "--no-opengl-sw" "--no-system-dxc-compiler" "--no-system-d3d-compiler" "--dir" $PkgDir (Join-Path $PkgDir "eden.exe")
 
     Remove-Item -Force -ErrorAction SilentlyContinue $ZipPath
     Compress-Archive -Path (Join-Path $PkgDir "*") -DestinationPath $ZipPath
