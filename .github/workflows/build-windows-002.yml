@@ -1,4 +1,4 @@
-name: Build Windows OneXPlayer 1195G7 001
+name: Build Windows OneXPlayer 1195G7 002
 
 on:
   workflow_dispatch:
@@ -49,13 +49,13 @@ jobs:
           Get-Command cl -ErrorAction SilentlyContinue
           Get-Command glslangValidator -ErrorAction Stop
           Get-ChildItem "$env:GITHUB_WORKSPACE\tools\windows" -Force
-          Test-Path "$env:GITHUB_WORKSPACE\tools\windows\build-onexplayer-1195g7-001.ps1"
+          Test-Path "$env:GITHUB_WORKSPACE\tools\windows\build-onexplayer-1195g7-002.ps1"
 
-      - name: Build Eden OneXPlayer 001
+      - name: Build Eden OneXPlayer 002
         shell: pwsh
         run: |
           Set-ExecutionPolicy -Scope Process Bypass
-          $script = Join-Path $env:GITHUB_WORKSPACE "tools\windows\build-onexplayer-1195g7-001.ps1"
+          $script = Join-Path $env:GITHUB_WORKSPACE "tools\windows\build-onexplayer-1195g7-002.ps1"
           if (-not (Test-Path $script)) {
             Write-Host "Repository root listing:"
             Get-ChildItem $env:GITHUB_WORKSPACE -Force
@@ -66,5 +66,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Eden-Windows-onexplayer-1195g7-001
-          path: artifacts/Eden-Windows-onexplayer-1195g7-001.zip
+          name: Eden-Windows-onexplayer-1195g7-002
+          path: artifacts/Eden-Windows-onexplayer-1195g7-002.zip

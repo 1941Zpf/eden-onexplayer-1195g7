@@ -28,7 +28,7 @@ enum class ActiveProfile {
 
 std::atomic<ActiveProfile> active_profile{ActiveProfile::None};
 std::atomic_size_t vulkan_pipeline_worker_limit{0};
-constexpr const char* onexplayer_profile_version = "001";
+constexpr const char* onexplayer_profile_version = "002";
 
 bool IsTruthyEnvironmentVariable(const char* name) {
     const char* value = std::getenv(name);
@@ -195,14 +195,12 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
     ForceCustomSetting(Settings::values.async_presentation, true);
     ForceCustomSetting(Settings::values.renderer_force_max_clock, false);
     ForceCustomSetting(Settings::values.use_docked_mode, Settings::ConsoleMode::Docked);
-    ForceCustomSetting(Settings::values.resolution_setup, Settings::ResolutionSetup::Res1X);
     ForceCustomSetting(Settings::values.gpu_accuracy, Settings::GpuAccuracy::Medium);
     ForceCustomSetting(Settings::values.fast_gpu_time, Settings::GpuOverclock::Normal);
     ForceCustomSetting(Settings::values.vram_usage_mode, Settings::VramUsageMode::Aggressive);
     ForceCustomSetting(Settings::values.accelerate_astc, Settings::AstcDecodeMode::Gpu);
     ForceCustomSetting(Settings::values.astc_recompression, Settings::AstcRecompression::Uncompressed);
     ForceCustomSetting(Settings::values.max_anisotropy, Settings::AnisotropyMode::Automatic);
-    ForceCustomSetting(Settings::values.frame_pacing_mode, Settings::FramePacingMode::Target_30);
     ForceCustomSetting(Settings::values.optimize_spirv_output, Settings::SpirvOptimizeMode::Never);
     ForceCustomSetting(Settings::values.dyna_state, Settings::ExtendedDynamicState::EDS2);
     ForceCustomSetting(Settings::values.vertex_input_dynamic_state, true);
@@ -238,7 +236,7 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
 
     LOG_INFO(Core,
              "Enabled OneXPlayer i7-1195G7/Iris Xe performance profile {} for {:016X}: Vulkan "
-             "pipeline workers capped at {}",
+             "pipeline workers capped at {}; resolution and frame pacing follow UI settings",
              onexplayer_profile_version,
              program_id,
              worker_limit);
@@ -280,14 +278,12 @@ void ResetOverrides() {
     Settings::values.async_presentation.SetGlobal(true);
     Settings::values.renderer_force_max_clock.SetGlobal(true);
     Settings::values.use_docked_mode.SetGlobal(true);
-    Settings::values.resolution_setup.SetGlobal(true);
     Settings::values.gpu_accuracy.SetGlobal(true);
     Settings::values.fast_gpu_time.SetGlobal(true);
     Settings::values.vram_usage_mode.SetGlobal(true);
     Settings::values.accelerate_astc.SetGlobal(true);
     Settings::values.astc_recompression.SetGlobal(true);
     Settings::values.max_anisotropy.SetGlobal(true);
-    Settings::values.frame_pacing_mode.SetGlobal(true);
     Settings::values.optimize_spirv_output.SetGlobal(true);
     Settings::values.dyna_state.SetGlobal(true);
     Settings::values.vertex_input_dynamic_state.SetGlobal(true);
