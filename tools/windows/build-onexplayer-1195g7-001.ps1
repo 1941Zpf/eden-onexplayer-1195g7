@@ -9,6 +9,7 @@ $BuildDir = Join-Path $RootDir "build-onexplayer-1195g7-001"
 $PkgDir = Join-Path $BuildDir "pkg"
 $ArtifactsDir = Join-Path $RootDir "artifacts"
 $ZipPath = Join-Path $ArtifactsDir "Eden-Windows-onexplayer-1195g7-001.zip"
+$UseBundledQt = $true
 
 function Invoke-Native {
     param(
@@ -136,7 +137,7 @@ try {
         "-DYUZU_ROOM_STANDALONE=OFF",
         "-DYUZU_USE_QT_MULTIMEDIA=OFF",
         "-DYUZU_USE_QT_WEB_ENGINE=OFF",
-        "-DYUZU_USE_BUNDLED_QT=ON",
+        "-DYUZU_USE_BUNDLED_QT=$($UseBundledQt.ToString().ToUpperInvariant())",
         "-DENABLE_LTO=ON",
         "-DGLSLANGVALIDATOR=$GlslangValidator"
     ) + $compilerArgs
@@ -148,24 +149,39 @@ try {
     if (-not (Test-Path (Join-Path $BuildDir "bin"))) {
         throw "Build output directory was not found: $(Join-Path $BuildDir "bin")"
     }
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $PkgDir
+    New-Item -ItemType Directory -Force -Path $PkgDir | Out-Null
     Copy-Item -Force (Join-Path $BuildDir "bin\*") $PkgDir
     Copy-Item -Force (Join-Path $RootDir "LICENSE.txt") $PkgDir
     Copy-Item -Force (Join-Path $RootDir "README.md") $PkgDir
     Copy-Item -Recurse -Force (Join-Path $RootDir "LICENSES") $PkgDir
+    if (-not (Test-Path (Join-Path $PkgDir "eden.exe"))) {
+        throw "eden.exe was not found in package directory: $PkgDir"
+    }
 
-    $WinDeployQt = $env:WINDEPLOYQT
-    if (-not $WinDeployQt) {
-        $QtTools = Get-ChildItem -Path $RootDir -Filter "windeployqt.exe" -Recurse -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-        if ($QtTools) {
-            $WinDeployQt = $QtTools.FullName
+    if ($UseBundledQt) {
+        Write-Host "-- Skipping windeployqt because YUZU_USE_BUNDLED_QT is enabled"
+    } else {
+        $WinDeployQt = $env:WINDEPLOYQT
+        if (-not $WinDeployQt) {
+            $WinDeployQtCommand = Get-Command "windeployqt.exe" -ErrorAction SilentlyContinue
+            if ($WinDeployQtCommand) {
+                $WinDeployQt = $WinDeployQtCommand.Source
+            }
         }
-    }
-    if (-not $WinDeployQt) {
-        throw "WINDEPLOYQT is not set and windeployqt.exe was not found under the repository"
-    }
+        if (-not $WinDeployQt) {
+            $QtTools = Get-ChildItem -Path @($RootDir, "C:\Qt", "$env:ProgramFiles\Qt") -Filter "windeployqt.exe" -Recurse -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+            if ($QtTools) {
+                $WinDeployQt = $QtTools.FullName
+            }
+        }
+        if (-not $WinDeployQt) {
+            throw "WINDEPLOYQT is not set and windeployqt.exe was not found"
+        }
 
-    Invoke-Native $WinDeployQt "--release" "--no-compiler-runtime" "--no-opengl-sw" "--no-system-dxc-compiler" "--no-system-d3d-compiler" "--dir" $PkgDir (Join-Path $PkgDir "eden.exe")
+        Invoke-Native $WinDeployQt "--release" "--no-compiler-runtime" "--no-opengl-sw" "--no-system-dxc-compiler" "--no-system-d3d-compiler" "--dir" $PkgDir (Join-Path $PkgDir "eden.exe")
+    }
 
     Remove-Item -Force -ErrorAction SilentlyContinue $ZipPath
     Compress-Archive -Path (Join-Path $PkgDir "*") -DestinationPath $ZipPath
