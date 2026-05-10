@@ -1,7 +1,10 @@
-name: Build Windows OneXPlayer 1195G7 002
+name: Build Windows OneXPlayer 1195G7 003
 
 on:
   workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -49,13 +52,13 @@ jobs:
           Get-Command cl -ErrorAction SilentlyContinue
           Get-Command glslangValidator -ErrorAction Stop
           Get-ChildItem "$env:GITHUB_WORKSPACE\tools\windows" -Force
-          Test-Path "$env:GITHUB_WORKSPACE\tools\windows\build-onexplayer-1195g7-002.ps1"
+          Test-Path "$env:GITHUB_WORKSPACE\tools\windows\build-onexplayer-1195g7-003.ps1"
 
-      - name: Build Eden OneXPlayer 002
+      - name: Build Eden OneXPlayer 003
         shell: pwsh
         run: |
           Set-ExecutionPolicy -Scope Process Bypass
-          $script = Join-Path $env:GITHUB_WORKSPACE "tools\windows\build-onexplayer-1195g7-002.ps1"
+          $script = Join-Path $env:GITHUB_WORKSPACE "tools\windows\build-onexplayer-1195g7-003.ps1"
           if (-not (Test-Path $script)) {
             Write-Host "Repository root listing:"
             Get-ChildItem $env:GITHUB_WORKSPACE -Force
@@ -63,8 +66,27 @@ jobs:
           }
           & $script
 
+      - name: Verify artifact package
+        shell: pwsh
+        run: |
+          $artifact = Join-Path $env:GITHUB_WORKSPACE "artifacts\Eden-Windows-onexplayer-1195g7-003.zip"
+          if (-not (Test-Path $artifact)) {
+            Write-Host "Repository root listing:"
+            Get-ChildItem $env:GITHUB_WORKSPACE -Force
+            Write-Host "Artifacts directory listing:"
+            Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE "artifacts") -Force -ErrorAction SilentlyContinue
+            throw "Expected artifact was not created: $artifact"
+          }
+          $item = Get-Item $artifact
+          if ($item.Length -le 0) {
+            throw "Artifact exists but is empty: $artifact"
+          }
+          Write-Host "Verified artifact: $artifact ($($item.Length) bytes)"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Eden-Windows-onexplayer-1195g7-002
-          path: artifacts/Eden-Windows-onexplayer-1195g7-002.zip
+          name: Eden-Windows-onexplayer-1195g7-003
+          path: ${{ github.workspace }}/artifacts/Eden-Windows-onexplayer-1195g7-003.zip
+          if-no-files-found: error
+          retention-days: 14

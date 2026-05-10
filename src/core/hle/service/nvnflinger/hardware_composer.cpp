@@ -59,15 +59,44 @@ u32 HardwareComposer::ComposeLocked(f32* out_speed_scale, Display& display,
 
     // If no layers are available, skip the logic.
     bool any_visible = false;
+    Layer* single_visible_layer = nullptr;
+    size_t visible_layer_count = 0;
     for (auto& layer : display.stack.layers) {
         if (layer->visible) {
             any_visible = true;
-            break;
+            visible_layer_count++;
+            single_visible_layer = visible_layer_count == 1 ? layer.get() : nullptr;
         }
     }
     if (!any_visible) {
         *out_speed_scale = 1.0f;
         return 1;
+    }
+
+    // Single-layer 30 FPS games often reuse the previous buffer for one 60 Hz compose tick.
+    // Skip layer reconstruction until the advertised swap interval allows a new acquire.
+    if (single_visible_layer && !single_visible_layer->is_overlay && m_framebuffers.size() == 1) {
+        const auto consumer_id = single_visible_layer->consumer_id;
+        if (auto fb_it = m_framebuffers.find(consumer_id);
+            fb_it != m_framebuffers.end() && fb_it->second.is_acquired) {
+            auto& framebuffer = fb_it->second;
+            const s32 expected_interval =
+                NormalizeSwapInterval(out_speed_scale, framebuffer.item.swap_interval);
+            const u64 frames_since_last_acquire =
+                m_frame_number - framebuffer.last_acquire_frame;
+
+            if (frames_since_last_acquire < static_cast<u64>(expected_interval)) {
+                m_frame_number += 1;
+
+                if (framebuffer.release_frame_number <= m_frame_number) {
+                    single_visible_layer->buffer_item_consumer->ReleaseBuffer(
+                        framebuffer.item, android::Fence::NoFence());
+                    framebuffer.is_acquired = false;
+                }
+
+                return 1;
+            }
+        }
     }
 
     // Determine the number of vsync periods to wait before composing again.

@@ -7,6 +7,8 @@
 #pragma once
 
 #include <memory>
+#include <span>
+#include <vector>
 
 #include "common/bit_field.h"
 #include "common/common_types.h"
@@ -215,8 +217,8 @@ public:
 
     void RendererFrameEndNotify();
 
-    void RequestComposite(std::vector<Tegra::FramebufferConfig>&& layers,
-                          std::vector<Service::Nvidia::NvFence>&& fences);
+    void RequestComposite(std::span<const Tegra::FramebufferConfig> layers,
+                          std::span<const Service::Nvidia::NvFence> fences);
 
     std::vector<u8> GetAppletCaptureBuffer();
 

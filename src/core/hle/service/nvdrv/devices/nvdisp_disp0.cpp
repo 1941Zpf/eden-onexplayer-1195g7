@@ -60,10 +60,9 @@ void nvdisp_disp0::OnOpen(NvCore::SessionId session_id, DeviceFD fd) {}
 void nvdisp_disp0::OnClose(DeviceFD fd) {}
 
 void nvdisp_disp0::Composite(std::span<const Nvnflinger::HwcLayer> sorted_layers) {
-    std::vector<Tegra::FramebufferConfig> output_layers;
-    std::vector<Service::Nvidia::NvFence> output_fences;
+    boost::container::small_vector<Tegra::FramebufferConfig, 2> output_layers;
+    boost::container::small_vector<Service::Nvidia::NvFence, 2> output_fences;
     output_layers.reserve(sorted_layers.size());
-    output_fences.reserve(sorted_layers.size());
 
     for (auto& layer : sorted_layers) {
         output_layers.emplace_back(Tegra::FramebufferConfig{
@@ -83,7 +82,9 @@ void nvdisp_disp0::Composite(std::span<const Nvnflinger::HwcLayer> sorted_layers
         }
     }
 
-    system.GPU().RequestComposite(std::move(output_layers), std::move(output_fences));
+    system.GPU().RequestComposite(
+        std::span<const Tegra::FramebufferConfig>{output_layers.data(), output_layers.size()},
+        std::span<const Service::Nvidia::NvFence>{output_fences.data(), output_fences.size()});
     system.SpeedLimiter().DoSpeedLimiting(system.CoreTiming().GetGlobalTimeUs());
     system.GetPerfStats().EndSystemFrame();
     system.GetPerfStats().BeginSystemFrame();

@@ -10,6 +10,8 @@
 #include <condition_variable>
 #include <list>
 #include <memory>
+#include <span>
+#include <vector>
 
 #include "common/assert.h"
 #include "common/settings.h"
@@ -288,9 +290,21 @@ struct GPU::Impl {
         gpu_thread.FlushAndInvalidateRegion(addr, size);
     }
 
-    void RequestComposite(std::vector<Tegra::FramebufferConfig>&& layers,
-                          std::vector<Service::Nvidia::NvFence>&& fences) {
-        size_t num_fences{fences.size()};
+    void RequestComposite(std::span<const Tegra::FramebufferConfig> layers,
+                          std::span<const Service::Nvidia::NvFence> fences) {
+        if (fences.empty()) {
+            const auto wait_fence = RequestSyncOperation([this, layers] {
+                renderer->Composite(layers);
+            });
+            gpu_thread.TickGPU();
+            WaitForSyncOperation(wait_fence);
+            return;
+        }
+
+        const auto layers_for_actions =
+            std::make_shared<std::vector<Tegra::FramebufferConfig>>(layers.begin(), layers.end());
+        std::vector<Service::Nvidia::NvFence> fences_for_actions(fences.begin(), fences.end());
+        size_t num_fences{fences_for_actions.size()};
         size_t current_request_counter{};
         {
             std::unique_lock<std::mutex> lk(request_swap_mutex);
@@ -304,12 +318,11 @@ struct GPU::Impl {
             }
         }
         const auto wait_fence =
-            RequestSyncOperation([this, current_request_counter, &layers, &fences, num_fences] {
+            RequestSyncOperation([this, current_request_counter, layers_for_actions,
+                                  fences_for_actions = std::move(fences_for_actions),
+                                  num_fences] {
                 auto& syncpoint_manager = host1x.GetSyncpointManager();
-                if (num_fences == 0) {
-                    renderer->Composite(layers);
-                }
-                const auto executer = [this, current_request_counter, layers_copy = layers]() {
+                const auto executer = [this, current_request_counter, layers_for_actions]() {
                     {
                         std::unique_lock<std::mutex> lk(request_swap_mutex);
                         if (--request_swap_counters[current_request_counter] != 0) {
@@ -317,10 +330,13 @@ struct GPU::Impl {
                         }
                         free_swap_counters.push_back(current_request_counter);
                     }
-                    renderer->Composite(layers_copy);
+                    renderer->Composite(std::span<const Tegra::FramebufferConfig>{
+                        layers_for_actions->data(), layers_for_actions->size()});
                 };
                 for (size_t i = 0; i < num_fences; i++) {
-                    syncpoint_manager.RegisterGuestAction(fences[i].id, fences[i].value, executer);
+                    syncpoint_manager.RegisterGuestAction(fences_for_actions[i].id,
+                                                          fences_for_actions[i].value,
+                                                          executer);
                 }
             });
         gpu_thread.TickGPU();
@@ -490,9 +506,9 @@ const VideoCore::ShaderNotify& GPU::ShaderNotify() const {
     return impl->ShaderNotify();
 }
 
-void GPU::RequestComposite(std::vector<Tegra::FramebufferConfig>&& layers,
-                           std::vector<Service::Nvidia::NvFence>&& fences) {
-    impl->RequestComposite(std::move(layers), std::move(fences));
+void GPU::RequestComposite(std::span<const Tegra::FramebufferConfig> layers,
+                           std::span<const Service::Nvidia::NvFence> fences) {
+    impl->RequestComposite(layers, fences);
 }
 
 std::vector<u8> GPU::GetAppletCaptureBuffer() {

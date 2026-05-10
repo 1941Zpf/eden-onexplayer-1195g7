@@ -11,6 +11,7 @@
 #include "core/core.h"
 #include "core/frontend/graphics_context.h"
 #include "core/game_settings.h"
+#include "core/hardware_properties.h"
 #include "video_core/control/scheduler.h"
 #include "video_core/dma_pusher.h"
 #include "video_core/gpu.h"
@@ -30,7 +31,11 @@ static void RunThread(std::stop_token stop_token, Core::System& system,
                                          : Common::ThreadPriority::Critical);
     if (Core::GameSettings::UseThermalAwareThreadScheduling()) {
         Common::SetCurrentThreadPowerThrottling(false);
-        Common::PinCurrentThreadToPhysicalCoreSiblings();
+        if (Core::GameSettings::ReservePrimaryCoreForVulkanSubmission()) {
+            Common::PinCurrentThreadToPrimaryPhysicalCore(Core::Hardware::NUM_CPU_CORES - 1);
+        } else {
+            Common::PinCurrentThreadToPhysicalCoreSiblings();
+        }
     }
     system.RegisterHostThread();
 

@@ -5,10 +5,10 @@ $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RootDir = Resolve-Path (Join-Path $ScriptDir "..\..")
-$BuildDir = Join-Path $RootDir "build-onexplayer-1195g7-002"
+$BuildDir = Join-Path $RootDir "build-onexplayer-1195g7-003"
 $PkgDir = Join-Path $BuildDir "pkg"
 $ArtifactsDir = Join-Path $RootDir "artifacts"
-$ZipPath = Join-Path $ArtifactsDir "Eden-Windows-onexplayer-1195g7-002.zip"
+$ZipPath = Join-Path $ArtifactsDir "Eden-Windows-onexplayer-1195g7-003.zip"
 $UseBundledQt = $true
 
 function Invoke-Native {
@@ -185,8 +185,15 @@ try {
 
     Remove-Item -Force -ErrorAction SilentlyContinue $ZipPath
     Compress-Archive -Path (Join-Path $PkgDir "*") -DestinationPath $ZipPath
+    if (-not (Test-Path $ZipPath)) {
+        throw "Package archive was not created: $ZipPath"
+    }
+    $ZipItem = Get-Item $ZipPath
+    if ($ZipItem.Length -le 0) {
+        throw "Package archive is empty: $ZipPath"
+    }
 
-    Write-Host "Created $ZipPath"
+    Write-Host "Created $ZipPath ($($ZipItem.Length) bytes)"
 } finally {
     Pop-Location
 }
