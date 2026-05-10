@@ -201,7 +201,8 @@ void CpuManager::RunThread(std::stop_token token, std::size_t core) {
     if (use_thermal_scheduling) {
         Common::SetCurrentThreadPowerThrottling(false);
         if (use_reserved_cpu_sibling) {
-            Common::PinCurrentThreadToPhysicalCoreSibling(core);
+            // Leave the last physical core's sibling to Vulkan submission work.
+            Common::PinCurrentThreadToPhysicalCoreSibling(Core::Hardware::NUM_CPU_CORES - 2);
         } else {
             Common::PinCurrentThreadToPrimaryPhysicalCore(core);
         }

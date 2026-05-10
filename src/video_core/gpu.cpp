@@ -8,9 +8,11 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <list>
+#include <deque>
+#include <functional>
 #include <memory>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include "common/assert.h"
@@ -117,7 +119,7 @@ struct GPU::Impl {
     [[nodiscard]] u64 RequestSyncOperation(Func&& action) {
         std::unique_lock lck{sync_request_mutex};
         const u64 fence = ++last_sync_fence;
-        sync_requests.emplace_back(action);
+        sync_requests.emplace_back(std::forward<Func>(action));
         return fence;
     }
 
@@ -377,7 +379,7 @@ struct GPU::Impl {
 
     std::condition_variable sync_cv;
 
-    std::list<std::function<void()>> sync_requests;
+    std::deque<std::function<void()>> sync_requests;
     std::atomic<u64> current_sync_fence{};
     u64 last_sync_fence{};
     std::mutex sync_request_mutex;

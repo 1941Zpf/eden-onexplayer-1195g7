@@ -16,6 +16,7 @@
 #include "common/settings.h"
 #include "common/thread.h"
 #include "core/game_settings.h"
+#include "core/hardware_properties.h"
 #include "video_core/gpu_logging/gpu_logging.h"
 #include "video_core/renderer_vulkan/vk_command_pool.h"
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
@@ -49,14 +50,14 @@ Scheduler::Scheduler(const Device& device_, StateTracker& state_tracker_)
       master_semaphore{std::make_unique<MasterSemaphore>(device)},
       command_pool{std::make_unique<CommandPool>(*master_semaphore, device)} {
 
-    /*// PRE-OPTIMIZATION: Warm up the pool to prevent mid-frame spikes
-    {
+    if (Core::GameSettings::UseThermalAwareThreadScheduling()) {
+        constexpr size_t onexplayer_reserved_chunks = 96;
         std::scoped_lock rl{reserve_mutex};
-        chunk_reserve.reserve(2048); // Prevent vector resizing
-        for (int i = 0; i < 1024; ++i) {
+        chunk_reserve.reserve(onexplayer_reserved_chunks);
+        for (size_t i = 0; i < onexplayer_reserved_chunks; ++i) {
             chunk_reserve.push_back(std::make_unique<CommandChunk>());
         }
-    }*/
+    }
 
     AcquireNewChunk();
     AllocateWorkerCommandBuffer();
@@ -101,7 +102,7 @@ void Scheduler::DispatchWork() {
         std::scoped_lock ql{queue_mutex};
         work_queue.push(std::move(chunk));
     }
-    event_cv.notify_all();
+    event_cv.notify_one();
     AcquireNewChunk();
 }
 
@@ -193,7 +194,11 @@ void Scheduler::WorkerThread(std::stop_token stop_token) {
     if (Core::GameSettings::UseThermalAwareThreadScheduling()) {
         Common::SetCurrentThreadPriority(Common::ThreadPriority::High);
         Common::SetCurrentThreadPowerThrottling(false);
-        Common::PinCurrentThreadToPhysicalCoreSiblings();
+        if (Core::GameSettings::ReservePrimaryCoreForVulkanSubmission()) {
+            Common::PinCurrentThreadToPhysicalCoreSibling(Core::Hardware::NUM_CPU_CORES - 1);
+        } else {
+            Common::PinCurrentThreadToPhysicalCoreSiblings();
+        }
     }
 
     const auto TryPopQueue{[this](auto& work) -> bool {
@@ -203,7 +208,9 @@ void Scheduler::WorkerThread(std::stop_token stop_token) {
 
         work = std::move(work_queue.front());
         work_queue.pop();
-        event_cv.notify_all();
+        if (work_queue.empty()) {
+            event_cv.notify_all();
+        }
         return true;
     }};
 

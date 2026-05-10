@@ -28,7 +28,7 @@ enum class ActiveProfile {
 
 std::atomic<ActiveProfile> active_profile{ActiveProfile::None};
 std::atomic_size_t vulkan_pipeline_worker_limit{0};
-constexpr const char* onexplayer_profile_version = "003";
+constexpr const char* onexplayer_profile_version = "004";
 
 bool IsTruthyEnvironmentVariable(const char* name) {
     const char* value = std::getenv(name);
@@ -237,7 +237,7 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
     LOG_INFO(Core,
              "Enabled OneXPlayer i7-1195G7/Iris Xe performance profile {} for {:016X}: Vulkan "
              "pipeline workers capped at {}; resolution and frame pacing follow UI settings; "
-             "Vulkan submission gets a reserved primary core",
+             "Vulkan submission gets a reserved primary core and prewarmed command chunks",
              onexplayer_profile_version,
              program_id,
              worker_limit);
