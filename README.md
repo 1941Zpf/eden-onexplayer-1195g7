@@ -6,28 +6,51 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 -->
 
-# Eden OneXPlayer 1S i7-1195G7 Optimized Fork
+<div align="center" id="readme-top">
+  <img src="./dist/qt_themes/default/icons/256x256/eden.png" alt="Eden logo" width="112">
 
-**Language / 语言:** [English](#english) | [中文](#zh-cn)
+  <h1>Eden OneXPlayer 1S i7-1195G7 Optimized Fork</h1>
+
+  <p>
+    A source-level Eden fork tuned for OneXPlayer 1S, Intel Core i7-1195G7, and Intel Iris Xe handheld hardware.
+  </p>
+
+  <p>
+    <a href="#english"><img alt="English default" src="https://img.shields.io/badge/English-default-2f81f7?style=for-the-badge"></a>
+    <a href="#zh-cn"><img alt="Chinese" src="https://img.shields.io/badge/%E4%B8%AD%E6%96%87-%E5%AF%B9%E7%85%A7-34a853?style=for-the-badge"></a>
+  </p>
+
+  <p>
+    <img alt="Target hardware" src="https://img.shields.io/badge/Target-OneXPlayer%201S-1f6feb?style=flat-square">
+    <img alt="CPU" src="https://img.shields.io/badge/CPU-i7--1195G7-0071c5?style=flat-square&logo=intel&logoColor=white">
+    <img alt="GPU" src="https://img.shields.io/badge/GPU-Iris%20Xe-5e5ce6?style=flat-square">
+    <img alt="Focus" src="https://img.shields.io/badge/Focus-thermal%20aware-f97316?style=flat-square">
+    <img alt="Source" src="https://img.shields.io/badge/Source-public-22c55e?style=flat-square">
+    <img alt="License" src="https://img.shields.io/badge/License-GPLv3%2B-6f42c1?style=flat-square">
+  </p>
+</div>
+
+---
 
 <a id="english"></a>
 
 ## English
 
-This is a study and experimentation fork based on [Eden](https://git.eden-emu.dev/eden-emu/eden).
+### Overview
 
-The purpose of this repository is not to reintroduce Eden's general emulator features. Instead, it focuses on source-level performance and stability experiments for **One-Netbook OneXPlayer 1S / Intel Core i7-1195G7 / Intel Iris Xe** class handheld hardware.
+This is a study and experimentation fork based on [Eden](https://git.eden-emu.dev/eden-emu/eden). It does not try to reintroduce Eden's general emulator feature set. The repository is centered on source-level performance and stability work for **One-Netbook OneXPlayer 1S / Intel Core i7-1195G7 / Intel Iris Xe** handheld systems.
 
-Target hardware:
-
-- CPU: Intel Core i7-1195G7, 4 cores / 8 threads, Tiger Lake
-- GPU: Intel Iris Xe integrated graphics with shared system memory
-- Typical environment: Windows handheld, limited cooling capacity, sustained load can reach the 100 C thermal wall and trigger frequency drops
-- Main goal: reduce avoidable CPU overhead, soften thermal throttling pressure, and improve Vulkan, memory, and shader-path smoothness without intentionally sacrificing visual correctness
+| Item | Target |
+| --- | --- |
+| CPU | Intel Core i7-1195G7, 4 cores / 8 threads, Tiger Lake |
+| GPU | Intel Iris Xe integrated graphics with shared system memory |
+| Environment | Windows handheld with limited sustained cooling capacity |
+| Main pressure point | 100 C thermal wall, frequency drops under sustained load |
+| Optimization goal | Reduce avoidable CPU cost, lower thermal pressure, and improve Vulkan, memory, and shader-path smoothness without intentionally sacrificing visual correctness |
 
 ### Project Scope
 
-This fork is intended for source study, performance tuning experiments, and hardware-specific discussion.
+This fork is for source study, performance tuning experiments, and hardware-specific discussion.
 
 It does not include games, keys, firmware, or copyrighted content. Only test with content you legally own and have dumped yourself.
 
@@ -35,15 +58,26 @@ This is not an official Eden build and does not represent the default behavior o
 
 ### Release Lag Notice
 
-Published release builds may lag behind the source tree. A release package may not contain every feature, fix, or optimization described in this README. For any specific binary release, the release notes are the authoritative source.
+> Published release builds may lag behind the source tree. A release package may not contain every feature, fix, or optimization described in this README. For any specific binary release, the release notes are the authoritative source.
 
 The source code is fully public. If you want the latest available source-level changes, you may build from the repository yourself. Please note that unreleased code can also contain bugs, regressions, or unfinished experiments.
 
-### Optimization Highlights
+### Optimization Map
 
-#### 1. OneXPlayer 1195G7 Profile
+| Area | Source-level focus | Why it matters on i7-1195G7 / Iris Xe |
+| --- | --- | --- |
+| OneXPlayer profile | Dedicated startup profile, Vulkan default, docked mode default, UI-controlled frame limit and resolution | Keeps the fork aligned with the target handheld instead of applying generic desktop assumptions |
+| Thread scheduling | Higher priority guest CPU threads, shifted Vulkan/GPU/background workers, reduced busy waiting | Helps a 4C/8T handheld keep critical threads responsive while reducing heat from background contention |
+| Vulkan submission | Pre-reserved command chunks, native single-draw preference, larger upload stream buffer | Reduces allocation churn and command overhead on the Iris Xe Windows Vulkan path |
+| Pipeline cache | Disk shader cache and Vulkan driver pipeline cache retained, runtime SPIR-V optimization disabled by default | Reduces repeated pipeline work and lowers shader compilation CPU spikes |
+| GPU cache invalidation | Dirty-memory fast skip, queued invalidation, range coalescing, bounded invalidation queue | Cuts avoidable CPU/cache work without intentionally skipping required synchronization |
+| Texture path | GPU ASTC decode, conservative GPU unswizzle settings, limited low-priority texture workers | Reduces CPU texture pressure while respecting shared-memory bandwidth and thermals |
+| Dynarmic cache | x86_64 OneXPlayer profile raises code cache to at least 1 GiB | Reduces repeated JIT pressure during longer sessions when memory capacity is sufficient |
+| Shader correctness | `VOTE_vtg` is connected to the existing `VOTE` implementation | Fixes a previously stubbed Maxwell shader path needed for correct subgroup vote/ballot IR |
 
-The fork adds a dedicated OneXPlayer i7-1195G7/Iris Xe profile and applies it at startup. The profile prefers paths that better fit this machine:
+### Hardware-Aware Details
+
+#### OneXPlayer 1195G7 Profile
 
 - Vulkan backend by default
 - Docked mode by default
@@ -51,9 +85,7 @@ The fork adds a dedicated OneXPlayer i7-1195G7/Iris Xe profile and applies it at
 - Safer CPU/cache defaults, avoiding performance gains that depend on obvious visual correctness tradeoffs
 - Disk shader cache and Vulkan driver pipeline cache enabled by default
 
-#### 2. 4C/8T Handheld Thread Scheduling
-
-The i7-1195G7 has strong burst clocks, but handheld cooling makes sustained all-core load expensive. This fork tries to keep critical emulator threads responsive while moving background work to less disruptive lanes:
+#### 4C/8T Thread Scheduling
 
 - Guest CPU core threads use higher priority and disable Windows execution-speed throttling
 - Vulkan, GPU, and background workers are shifted toward SMT sibling lanes where appropriate
@@ -69,43 +101,17 @@ $env:EDEN_1195G7_SHADER_WORKERS="4"
 
 Valid values are `1` to `4`. More workers may reduce shader compilation waits, but can also raise temperature and worsen throttling.
 
-#### 3. Vulkan Submission and Pipeline Cache
+#### Vulkan, Memory, and Texture Paths
 
-Several Vulkan-side changes target the Iris Xe Windows path:
+- Vulkan command chunks are pre-reserved to reduce runtime allocation churn
+- Native single-draw commands are preferred on Iris Xe when a one-entry multi-draw wrapper is not helpful
+- Upload stream buffer size is increased to reduce asset-streaming jitter
+- GPU dirty memory checks can fast-skip empty invalidations
+- Adjacent or overlapping invalidation ranges are merged before touching texture, buffer, and pipeline caches
+- OneXPlayer profile flags and runtime parameters are cached in atomics to avoid repeated environment-variable reads from hot paths
+- GPU ASTC decoding and conservative GPU unswizzle settings are used by default
 
-- Pre-reserved Vulkan command chunks to reduce runtime allocation churn
-- Prefer native single-draw commands on the Iris Xe path where a one-entry multi-draw wrapper is not helpful
-- Larger Vulkan upload stream buffer to reduce upload jitter in asset-heavy scenes
-- Vulkan driver pipeline cache retained to reduce repeated pipeline construction
-- SPIR-V output optimization disabled by default to reduce runtime shader compilation CPU cost
-
-#### 4. GPU Cache Invalidation and Memory Sync
-
-Open-world games can trigger frequent CPU/GPU shared-memory invalidation. This fork reduces avoidable work in that path:
-
-- Fast skip when there is no pending GPU dirty memory
-- Queue selected cache invalidations to the GPU thread in asynchronous GPU mode
-- Merge adjacent or overlapping invalidation ranges before touching texture, buffer, and pipeline caches
-- Bound the invalidation queue to avoid uncontrolled latency
-- Cache OneXPlayer profile flags and runtime parameters in atomics, avoiding repeated environment-variable reads from hot paths
-
-These changes aim to reduce CPU overhead and lock contention without skipping required synchronization.
-
-#### 5. Texture, ASTC, and Unswizzle Paths
-
-Intel Iris Xe uses shared memory, so texture work can pressure the GPU, CPU, and memory bandwidth at the same time. The fork uses conservative defaults:
-
-- GPU ASTC decoding by default to reduce CPU-side texture decode pressure
-- GPU unswizzle enabled with conservative size and streaming settings
-- Texture-related background workers kept at limited parallelism and lower priority to reduce thermal pressure
-
-#### 6. Dynarmic Code Cache
-
-For x86_64 builds under the OneXPlayer profile, Dynarmic code cache size is increased to at least 1 GiB.
-
-This is intended to reduce repeated JIT pressure during longer play sessions when memory capacity is sufficient.
-
-#### 7. Splatoon 3 Shader Correctness Fix
+#### Splatoon 3 Shader Correctness Fix
 
 While investigating a Splatoon 3 red fuzzy-ooze texture issue, the Maxwell shader recompiler's `VOTE_vtg` instruction path was found to be stubbed.
 
@@ -139,20 +145,25 @@ This fork is based on the Eden Emulator Project. Original copyright notices from
 
 Eden is licensed under GPLv3 or any later version. See [LICENSE.txt](./LICENSE.txt).
 
+<p align="right"><a href="#readme-top">Back to top</a></p>
+
+---
+
 <a id="zh-cn"></a>
 
 ## 中文
 
-这是一个基于 [Eden](https://git.eden-emu.dev/eden-emu/eden) 的学习交流用 fork。
+### 概览
 
-本仓库的重点不是重新介绍 Eden 原本已有的通用模拟器功能，而是在 Eden 的基础上，针对 **壹号本 OneXPlayer 1S / Intel Core i7-1195G7 / Intel Iris Xe** 这类掌机硬件，做源码级性能与稳定性优化实验。
+这是一个基于 [Eden](https://git.eden-emu.dev/eden-emu/eden) 的学习交流用 fork。本仓库不重复介绍 Eden 原本已有的通用模拟器功能，而是围绕 **壹号本 OneXPlayer 1S / Intel Core i7-1195G7 / Intel Iris Xe** 掌机硬件进行源码级性能与稳定性优化实验。
 
-目标硬件：
-
-- CPU：Intel Core i7-1195G7，4 核 8 线程，Tiger Lake
-- GPU：Intel Iris Xe 核显，共享系统内存
-- 典型环境：Windows 掌机，散热空间有限，持续高负载容易触及 100 度温度墙并降频
-- 主要目标：在不主动牺牲画面正确性的前提下，降低不必要 CPU 开销，缓解热降频压力，改善 Vulkan、内存和着色器路径的流畅度
+| 项目 | 目标 |
+| --- | --- |
+| CPU | Intel Core i7-1195G7，4 核 8 线程，Tiger Lake |
+| GPU | Intel Iris Xe 核显，共享系统内存 |
+| 典型环境 | Windows 掌机，持续散热能力有限 |
+| 主要压力点 | 100 度温度墙，以及持续负载下的频率下降 |
+| 优化目标 | 在不主动牺牲画面正确性的前提下，降低不必要 CPU 成本，缓解热压力，并改善 Vulkan、内存和着色器路径的流畅度 |
 
 ### 项目定位
 
@@ -164,15 +175,26 @@ Eden is licensed under GPLv3 or any later version. See [LICENSE.txt](./LICENSE.t
 
 ### 发布版滞后说明
 
-发布版本可能会滞后于源码主分支。某个发布包并不一定包含 README 中描述的所有功能、修复和优化；具体以对应发布版本的发布说明为准。
+> 发布版本可能会滞后于源码主分支。某个发布包并不一定包含 README 中描述的所有功能、修复和优化；具体以对应发布版本的发布说明为准。
 
 本仓库全面公开源码。如果需要当前源码中的全部功能和优化，可以自行从源码编译。需要注意的是，未发布版本也可能存在 bug、回归或尚未完成的实验性改动。
 
-### 当前优化重点
+### 优化地图
 
-#### 1. OneXPlayer 1195G7 专用 Profile
+| 方向 | 源码层重点 | 对 i7-1195G7 / Iris Xe 的意义 |
+| --- | --- | --- |
+| OneXPlayer profile | 专用启动 profile、默认 Vulkan、默认主机模式、帧率和分辨率交给图形界面 | 让 fork 明确服务目标掌机，而不是套用泛桌面假设 |
+| 线程调度 | 提升 guest CPU 线程优先级，移动 Vulkan/GPU/后台 worker，减少长时间忙等 | 帮助 4C/8T 掌机保持关键线程响应，同时减少后台竞争带来的热量 |
+| Vulkan 提交 | 预留 command chunk，偏向原生单 draw，增大 upload stream buffer | 降低 Iris Xe Windows Vulkan 路径上的分配和命令开销 |
+| 管线缓存 | 保留磁盘 shader cache 和 Vulkan driver pipeline cache，默认关闭运行期 SPIR-V 输出优化 | 减少重复 pipeline 工作，降低 shader 编译 CPU 峰值 |
+| GPU cache invalidation | dirty memory 快速跳过、队列化 invalidation、范围合并、有界队列 | 减少不必要 CPU/cache 工作，同时不主动跳过必要同步 |
+| 纹理路径 | GPU ASTC 解码、保守 GPU unswizzle、低优先级有限纹理 worker | 降低 CPU 纹理压力，同时顾及共享内存带宽和温度 |
+| Dynarmic cache | x86_64 OneXPlayer profile 下代码缓存至少 1 GiB | 在内存足够时减少长时间游玩中的重复 JIT 压力 |
+| Shader 正确性 | `VOTE_vtg` 接入现有 `VOTE` 实现 | 修复原本 stub 的 Maxwell shader 路径，使其生成正确 subgroup vote/ballot IR |
 
-源码中加入了 OneXPlayer i7-1195G7/Iris Xe 专用 profile，并在启动时默认应用。它会优先选择更适合这台机器的运行路径：
+### 硬件专项细节
+
+#### OneXPlayer 1195G7 专用 Profile
 
 - 默认使用 Vulkan 后端
 - 默认主机模式
@@ -180,9 +202,7 @@ Eden is licensed under GPLv3 or any later version. See [LICENSE.txt](./LICENSE.t
 - 默认保持偏安全的 CPU/cache 设置，避免用明显牺牲画面正确性的方式换性能
 - 默认开启磁盘 shader cache 和 Vulkan driver pipeline cache
 
-#### 2. 针对 4C/8T 掌机的线程调度
-
-i7-1195G7 的短时睿频能力很强，但掌机散热下持续满载代价很高。这个 fork 尝试让关键模拟器线程保持响应，同时把后台工作移动到更不干扰的位置：
+#### 4C/8T 线程调度
 
 - Guest CPU 核心线程使用较高优先级，并关闭 Windows 执行速度节流
 - Vulkan、GPU 和后台 worker 在合适场景下偏向 SMT sibling lanes
@@ -198,43 +218,17 @@ $env:EDEN_1195G7_SHADER_WORKERS="4"
 
 有效范围为 `1` 到 `4`。更多 worker 可能减少 shader 编译等待，但也可能提高温度并加重降频。
 
-#### 3. Vulkan 提交与管线缓存
-
-针对 Iris Xe Windows Vulkan 路径做了多处调整：
+#### Vulkan、内存与纹理路径
 
 - 预留 Vulkan command chunk，减少运行时频繁分配
-- Iris Xe 路径在合适场景偏向原生单 draw，避免单 draw 走 multi-draw wrapper 的额外开销
-- 增大 Vulkan upload stream buffer，降低资源密集场景的上传抖动
-- 保留 Vulkan driver pipeline cache，减少重复 pipeline 构建
-- 默认关闭 SPIR-V 输出优化，减少运行期 shader 编译 CPU 成本
-
-#### 4. GPU Cache Invalidation 与内存同步
-
-开放世界游戏会频繁触发 CPU/GPU 共享内存失效处理。这个 fork 对相关路径减少不必要工作：
-
-- GPU dirty memory 为空时快速跳过不必要的 cache invalidation
-- 异步 GPU 模式下将部分 cache invalidation 排队到 GPU 线程处理
+- Iris Xe 路径在单 draw 场景偏向原生命令，避免不必要的 multi-draw wrapper
+- 增大 upload stream buffer，降低资源流式加载抖动
+- GPU dirty memory 为空时快速跳过不必要 invalidation
 - 对连续或重叠 invalidation range 做合并，再触发 texture、buffer 和 pipeline cache 处理
-- 对 invalidation 队列设置上限，避免延迟失控
 - 将 OneXPlayer profile 的 flags 和运行参数缓存为原子变量，避免高频路径反复读取环境变量
+- 默认使用 GPU ASTC 解码和保守 GPU unswizzle 设置
 
-这些改动的目标是减少 CPU 消耗和锁竞争，而不是跳过必要同步。
-
-#### 5. 纹理、ASTC 与 Unswizzle 路径
-
-Intel Iris Xe 是共享内存核显，纹理处理可能同时压到 GPU、CPU 和内存带宽。本 fork 采用相对保守的默认策略：
-
-- 默认使用 GPU ASTC 解码，减少 CPU 侧纹理解码压力
-- 默认开启 GPU unswizzle，并使用较保守的大小和流式参数
-- 纹理相关后台 worker 保持有限并行度和较低优先级，减少热压力
-
-#### 6. Dynarmic 代码缓存
-
-在 x86_64 + OneXPlayer profile 下，Dynarmic code cache 至少提升到 1 GiB。
-
-这有助于在内存容量足够时，降低长时间游玩中的重复 JIT 压力。
-
-#### 7. Splatoon 3 Shader 正确性修复
+#### Splatoon 3 Shader 正确性修复
 
 在排查 Splatoon 3 红色绒毛贴图问题时，发现 Maxwell shader recompiler 的 `VOTE_vtg` 指令路径原本是 stub。
 
@@ -267,3 +261,5 @@ $env:EDEN_1195G7_UNSAFE_CACHE="1"
 本 fork 基于 Eden Emulator Project。原项目及其衍生来源的版权声明保留在源码文件中。
 
 Eden 使用 GPLv3 或更高版本授权，详见 [LICENSE.txt](./LICENSE.txt)。
+
+<p align="right"><a href="#readme-top">回到顶部</a></p>
