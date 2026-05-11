@@ -5,10 +5,10 @@ $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RootDir = Resolve-Path (Join-Path $ScriptDir "..\..")
-$BuildDir = Join-Path $RootDir "build-onexplayer-1195g7-013"
+$BuildDir = Join-Path $RootDir "build-onexplayer-1195g7-016"
 $PkgDir = Join-Path $BuildDir "pkg"
 $ArtifactsDir = Join-Path $RootDir "artifacts"
-$ZipPath = Join-Path $ArtifactsDir "Eden-Windows-onexplayer-1195g7-013.zip"
+$ZipPath = Join-Path $ArtifactsDir "Eden-Windows-onexplayer-1195g7-016.zip"
 $UseBundledQt = $true
 
 function Invoke-Native {
