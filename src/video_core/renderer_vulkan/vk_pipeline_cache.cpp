@@ -376,7 +376,8 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
               "VkPipelineBuilder", {}, Common::ThreadPriority::Normal,
               Core::GameSettings::UseThermalAwareThreadScheduling(),
               Core::GameSettings::UseThermalAwareThreadScheduling(),
-              Core::GameSettings::UseThermalAwareThreadScheduling() ? 1 : 0),
+              Core::GameSettings::UseThermalAwareThreadScheduling() ? std::size_t{1}
+                                                                     : std::size_t{0}),
       serialization_thread(1,
                            "VkPipelineSerialization",
                            {},
@@ -385,7 +386,8 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
                                : Common::ThreadPriority::Normal,
                            Core::GameSettings::UseThermalAwareThreadScheduling(),
                            false,
-                           Core::GameSettings::UseThermalAwareThreadScheduling() ? 3 : 0) {
+                           Core::GameSettings::UseThermalAwareThreadScheduling() ? std::size_t{3}
+                                                                                 : std::size_t{0}) {
     const auto& float_control{device.FloatControlProperties()};
     const VkDriverId driver_id{device.GetDriverID()};
     profile = Shader::Profile{

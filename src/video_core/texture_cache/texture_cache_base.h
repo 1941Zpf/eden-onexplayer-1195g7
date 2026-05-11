@@ -7,6 +7,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <deque>
 #include <limits>
 #include <mutex>
@@ -543,7 +544,7 @@ private:
                                                               : Common::ThreadPriority::Normal,
         Core::GameSettings::UseThermalAwareThreadScheduling(),
         false,
-        Core::GameSettings::UseThermalAwareThreadScheduling() ? 2 : 0};
+        Core::GameSettings::UseThermalAwareThreadScheduling() ? std::size_t{2} : std::size_t{0}};
     std::vector<std::unique_ptr<AsyncDecodeContext>> async_decodes;
 
     std::deque<PendingUnswizzle> unswizzle_queue;

@@ -7,6 +7,7 @@
 #include "video_core/textures/workers.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <thread>
 
 #include "core/game_settings.h"
@@ -24,8 +25,9 @@ Common::ThreadWorker& GetThreadWorkers() {
                                             : Common::ThreadPriority::Normal,
                                         Core::GameSettings::UseThermalAwareThreadScheduling(),
                                         false,
-                                        Core::GameSettings::UseThermalAwareThreadScheduling() ? 2
-                                                                                              : 0};
+                                        Core::GameSettings::UseThermalAwareThreadScheduling()
+                                            ? std::size_t{2}
+                                            : std::size_t{0}};
 
     return workers;
 }
