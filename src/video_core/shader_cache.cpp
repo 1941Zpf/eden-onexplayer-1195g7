@@ -143,6 +143,10 @@ void ShaderCache::Register(std::unique_ptr<ShaderInfo> data, VAddr addr, size_t 
 }
 
 void ShaderCache::InvalidatePagesInRegion(VAddr addr, size_t size) {
+    if (invalidation_cache.empty()) {
+        return;
+    }
+
     const VAddr addr_end = addr + size;
     const u64 page_end = (addr_end + YUZU_PAGESIZE - 1) >> YUZU_PAGEBITS;
     for (u64 page = addr >> YUZU_PAGEBITS; page < page_end; ++page) {

@@ -195,7 +195,7 @@ void Scheduler::WorkerThread(std::stop_token stop_token) {
         Common::SetCurrentThreadPriority(Common::ThreadPriority::High);
         Common::SetCurrentThreadPowerThrottling(false);
         if (Core::GameSettings::ReservePrimaryCoreForVulkanSubmission()) {
-            Common::PinCurrentThreadToPhysicalCoreSibling(Core::Hardware::NUM_CPU_CORES - 1);
+            Common::PinCurrentThreadToPhysicalCoreSibling(Core::Hardware::NUM_CPU_CORES - 2);
         } else {
             Common::PinCurrentThreadToPhysicalCoreSiblings();
         }

@@ -66,6 +66,8 @@ std::size_t GetTextureWorkerCount(std::size_t default_workers);
 std::size_t GetVulkanUploadStreamBufferSize(std::size_t default_size);
 bool UseThermalAwareThreadScheduling();
 bool ReservePrimaryCoreForVulkanSubmission();
+bool PreferNativeVulkanSingleDraw();
+std::uint32_t GetVulkanDrawDispatchMask(std::uint32_t default_mask);
 std::uint32_t GetDynarmicCodeCacheSize(std::uint32_t default_size);
 
 } // namespace Core::GameSettings

@@ -136,13 +136,18 @@ struct GPU::Impl {
     /// Tick pending requests within the GPU.
     void TickWork() {
         std::unique_lock lck{sync_request_mutex};
+        bool completed_requests = false;
         while (!sync_requests.empty()) {
             auto request = std::move(sync_requests.front());
             sync_requests.pop_front();
             sync_request_mutex.unlock();
             request();
             current_sync_fence.fetch_add(1, std::memory_order_release);
+            completed_requests = true;
             sync_request_mutex.lock();
+        }
+        if (completed_requests) {
+            lck.unlock();
             sync_request_cv.notify_all();
         }
     }

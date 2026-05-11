@@ -17,6 +17,7 @@
 #include "common/logging.h"
 #include "common/scope_exit.h"
 #include "common/settings.h"
+#include "core/game_settings.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/gpu_logging/gpu_logging.h"
 #include "video_core/control/channel_state.h"
@@ -243,8 +244,10 @@ void RasterizerVulkan::Draw(bool is_indexed, u32 instance_count) {
         const u32 num_instances{instance_count};
         const DrawParams draw_params{MakeDrawParams(draw_state, num_instances, is_indexed)};
 
-        // Use VK_EXT_multi_draw if available (single draw becomes multi-draw with count=1)
-        if (device.IsExtMultiDrawSupported()) {
+        // Iris Xe's Windows Vulkan path is usually faster with native single-draw commands than
+        // with a one-entry VK_EXT_multi_draw wrapper.
+        if (device.IsExtMultiDrawSupported() &&
+            !Core::GameSettings::PreferNativeVulkanSingleDraw()) {
             scheduler.Record([draw_params](vk::CommandBuffer cmdbuf) {
                 if (draw_params.is_indexed) {
                     // Use multi-draw indexed with single draw
@@ -936,7 +939,8 @@ void RasterizerVulkan::FlushWork() {
 #endif // ANDROID
 
     static_assert(DRAWS_TO_DISPATCH % (CHECK_MASK + 1) == 0);
-    if ((++draw_counter & CHECK_MASK) != CHECK_MASK) {
+    const u32 check_mask = Core::GameSettings::GetVulkanDrawDispatchMask(CHECK_MASK);
+    if ((++draw_counter & check_mask) != check_mask) {
         return;
     }
     if (draw_counter < DRAWS_TO_DISPATCH) {

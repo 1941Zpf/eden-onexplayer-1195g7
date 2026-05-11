@@ -27,12 +27,12 @@ static void RunThread(std::stop_token stop_token, Core::System& system,
                       Tegra::Control::Scheduler& scheduler, SynchState& state) {
     Common::SetCurrentThreadName("GPU");
     Common::SetCurrentThreadPriority(Core::GameSettings::UseThermalAwareThreadScheduling()
-                                         ? Common::ThreadPriority::VeryHigh
+                                         ? Common::ThreadPriority::High
                                          : Common::ThreadPriority::Critical);
     if (Core::GameSettings::UseThermalAwareThreadScheduling()) {
         Common::SetCurrentThreadPowerThrottling(false);
         if (Core::GameSettings::ReservePrimaryCoreForVulkanSubmission()) {
-            Common::PinCurrentThreadToPrimaryPhysicalCore(Core::Hardware::NUM_CPU_CORES - 1);
+            Common::PinCurrentThreadToPhysicalCoreSibling(Core::Hardware::NUM_CPU_CORES - 1);
         } else {
             Common::PinCurrentThreadToPhysicalCoreSiblings();
         }
@@ -44,28 +44,35 @@ static void RunThread(std::stop_token stop_token, Core::System& system,
 
     CommandDataContainer next;
 
+    const auto process_command = [&](CommandDataContainer& command) {
+        if (auto* submit_list = std::get_if<SubmitListCommand>(&command.data)) {
+            scheduler.Push(submit_list->channel, std::move(submit_list->entries));
+        } else if (std::holds_alternative<GPUTickCommand>(command.data)) {
+            system.GPU().TickWork();
+        } else if (const auto* flush = std::get_if<FlushRegionCommand>(&command.data)) {
+            rasterizer->FlushRegion(flush->addr, flush->size);
+        } else if (const auto* invalidate = std::get_if<InvalidateRegionCommand>(&command.data)) {
+            rasterizer->OnCacheInvalidation(invalidate->addr, invalidate->size);
+        } else {
+            ASSERT(false);
+        }
+        state.signaled_fence.store(command.fence);
+        if (command.block) {
+            // We have to lock the write_lock to ensure that the condition_variable wait not get a
+            // race between the check and the lock itself.
+            std::scoped_lock lk{state.write_lock};
+            state.cv.notify_all();
+        }
+    };
+
     while (!stop_token.stop_requested()) {
         state.queue.PopWait(next, stop_token);
         if (stop_token.stop_requested()) {
             break;
         }
-        if (auto* submit_list = std::get_if<SubmitListCommand>(&next.data)) {
-            scheduler.Push(submit_list->channel, std::move(submit_list->entries));
-        } else if (std::holds_alternative<GPUTickCommand>(next.data)) {
-            system.GPU().TickWork();
-        } else if (const auto* flush = std::get_if<FlushRegionCommand>(&next.data)) {
-            rasterizer->FlushRegion(flush->addr, flush->size);
-        } else if (const auto* invalidate = std::get_if<InvalidateRegionCommand>(&next.data)) {
-            rasterizer->OnCacheInvalidation(invalidate->addr, invalidate->size);
-        } else {
-            ASSERT(false);
-        }
-        state.signaled_fence.store(next.fence);
-        if (next.block) {
-            // We have to lock the write_lock to ensure that the condition_variable wait not get a
-            // race between the check and the lock itself.
-            std::scoped_lock lk{state.write_lock};
-            state.cv.notify_all();
+        process_command(next);
+        while (state.queue.TryPop(next)) {
+            process_command(next);
         }
     }
 }

@@ -190,22 +190,11 @@ void CpuManager::RunThread(std::stop_token token, std::size_t core) {
     std::string name = is_multicore ? ("CPUCore_" + std::to_string(core)) : std::string{"CPUThread"};
     Common::SetCurrentThreadName(name.c_str());
     const bool use_thermal_scheduling = Core::GameSettings::UseThermalAwareThreadScheduling();
-    const bool reserve_vulkan_submit_core =
-        Core::GameSettings::ReservePrimaryCoreForVulkanSubmission();
-    const bool use_reserved_cpu_sibling =
-        reserve_vulkan_submit_core && core == Core::Hardware::NUM_CPU_CORES - 1;
-    Common::SetCurrentThreadPriority(
-        use_thermal_scheduling ? (use_reserved_cpu_sibling ? Common::ThreadPriority::High
-                                                           : Common::ThreadPriority::VeryHigh)
-                               : Common::ThreadPriority::Critical);
+    Common::SetCurrentThreadPriority(use_thermal_scheduling ? Common::ThreadPriority::VeryHigh
+                                                            : Common::ThreadPriority::Critical);
     if (use_thermal_scheduling) {
         Common::SetCurrentThreadPowerThrottling(false);
-        if (use_reserved_cpu_sibling) {
-            // Leave the last physical core's sibling to Vulkan submission work.
-            Common::PinCurrentThreadToPhysicalCoreSibling(Core::Hardware::NUM_CPU_CORES - 2);
-        } else {
-            Common::PinCurrentThreadToPrimaryPhysicalCore(core);
-        }
+        Common::PinCurrentThreadToPrimaryPhysicalCore(core);
     }
 #ifdef __ANDROID__
     // Aimed specifically for Snapdragon 8 Elite devices
