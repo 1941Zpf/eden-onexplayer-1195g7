@@ -27,8 +27,9 @@ enum class ActiveProfile {
 };
 
 std::atomic<ActiveProfile> active_profile{ActiveProfile::None};
+std::atomic<std::uint64_t> active_program_id{};
 std::atomic_size_t vulkan_pipeline_worker_limit{0};
-constexpr const char* onexplayer_profile_version = "010";
+constexpr const char* onexplayer_profile_version = "011";
 
 bool IsTruthyEnvironmentVariable(const char* name) {
     const char* value = std::getenv(name);
@@ -81,6 +82,34 @@ bool IsStrictWfiMode() {
 bool IsStrictDirtyInvalidationMode() {
     return IsTruthyEnvironmentVariable("EDEN_1195G7_STRICT_DIRTY") ||
            IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_STRICT_DIRTY");
+}
+
+bool IsStrictRenderSyncMode() {
+    return IsTruthyEnvironmentVariable("EDEN_1195G7_STRICT_RENDER_SYNC") ||
+           IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_STRICT_RENDER_SYNC");
+}
+
+bool IsSplatoon3CompatibilityDisabled() {
+    return IsTruthyEnvironmentVariable("EDEN_1195G7_DISABLE_SPLATOON3_COMPAT") ||
+           IsTruthyEnvironmentVariable("EDEN_1195G7_DISABLE_COMPAT_RENDER_SYNC");
+}
+
+bool IsTitle(std::uint64_t program_id, TitleID title) {
+    return program_id == static_cast<std::uint64_t>(title);
+}
+
+bool IsActiveTitle(TitleID title) {
+    return IsTitle(active_program_id.load(std::memory_order_acquire), title);
+}
+
+bool NeedsConservativeRenderSync() {
+    if (IsStrictRenderSyncMode()) {
+        return true;
+    }
+    if (IsSplatoon3CompatibilityDisabled()) {
+        return false;
+    }
+    return IsActiveTitle(TitleID::Splatoon3);
 }
 
 template <typename Setting, typename Value>
@@ -206,6 +235,7 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
     }
 
     active_profile.store(ActiveProfile::Onexplayer1195G7, std::memory_order_release);
+    active_program_id.store(program_id, std::memory_order_release);
     const std::size_t worker_limit = ReadWorkerLimitFromEnvironment(3);
     vulkan_pipeline_worker_limit.store(worker_limit, std::memory_order_release);
 
@@ -238,6 +268,15 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
     ForceCustomSetting(Settings::values.gpu_unswizzle_stream_size, Settings::GpuUnswizzle::Normal);
     ForceCustomSetting(Settings::values.gpu_unswizzle_chunk_size,
                        Settings::GpuUnswizzleChunk::Normal);
+
+    const bool splatoon3_compat =
+        IsTitle(program_id, TitleID::Splatoon3) && !IsSplatoon3CompatibilityDisabled();
+    if (splatoon3_compat) {
+        ForceCustomSetting(Settings::values.gpu_accuracy, Settings::GpuAccuracy::High);
+        ForceCustomSetting(Settings::values.sync_memory_operations, true);
+        ForceCustomSetting(Settings::values.accelerate_astc, Settings::AstcDecodeMode::Cpu);
+    }
+
     if (!IsStrictCacheMode() &&
         (IsTruthyEnvironmentVariable("EDEN_1195G7_UNSAFE_CACHE") ||
          IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_UNSAFE_CACHE"))) {
@@ -260,10 +299,11 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
              "pipeline workers capped at {}; resolution and frame pacing follow UI settings; "
              "guest CPU keeps primary cores; Vulkan/background work uses shifted SMT lanes; "
              "safe CPU/cache defaults with coalesced invalidation, bounded queued invalidation "
-             "and WFI/fence guards",
+             "and WFI/fence guards; Splatoon 3 compatibility {}",
              onexplayer_profile_version,
              program_id,
-             worker_limit);
+             worker_limit,
+             splatoon3_compat ? "enabled" : "disabled");
     return true;
 }
 
@@ -288,6 +328,7 @@ void LoadOverrides(std::uint64_t program_id, const VideoCore::RendererBase& rend
 void ResetOverrides() {
     const ActiveProfile previous = active_profile.exchange(ActiveProfile::None,
                                                            std::memory_order_acq_rel);
+    active_program_id.store(0, std::memory_order_release);
     vulkan_pipeline_worker_limit.store(0, std::memory_order_release);
     Settings::values.use_squashed_iterated_blend = false;
 
@@ -363,22 +404,22 @@ std::uint32_t GetVulkanDrawDispatchMask(std::uint32_t default_mask) {
 
 bool UseRelaxedVulkanWaitForIdle() {
     return active_profile.load(std::memory_order_acquire) == ActiveProfile::Onexplayer1195G7 &&
-           !IsStrictWfiMode();
+           !IsStrictWfiMode() && !NeedsConservativeRenderSync();
 }
 
 bool UseGpuDirtyMemoryFastSkip() {
     return active_profile.load(std::memory_order_acquire) == ActiveProfile::Onexplayer1195G7 &&
-           !IsStrictDirtyInvalidationMode();
+           !IsStrictDirtyInvalidationMode() && !NeedsConservativeRenderSync();
 }
 
 bool UseQueuedGpuCacheInvalidation() {
     return active_profile.load(std::memory_order_acquire) == ActiveProfile::Onexplayer1195G7 &&
-           !IsStrictDirtyInvalidationMode();
+           !IsStrictDirtyInvalidationMode() && !NeedsConservativeRenderSync();
 }
 
 std::size_t GetQueuedGpuCacheInvalidationLimit(std::size_t default_limit) {
     if (active_profile.load(std::memory_order_acquire) != ActiveProfile::Onexplayer1195G7 ||
-        IsStrictDirtyInvalidationMode()) {
+        IsStrictDirtyInvalidationMode() || NeedsConservativeRenderSync()) {
         return default_limit;
     }
 
@@ -387,7 +428,7 @@ std::size_t GetQueuedGpuCacheInvalidationLimit(std::size_t default_limit) {
 
 std::uint64_t GetGpuCacheInvalidationCoalesceSpan(std::uint64_t default_span) {
     if (active_profile.load(std::memory_order_acquire) != ActiveProfile::Onexplayer1195G7 ||
-        IsStrictDirtyInvalidationMode()) {
+        IsStrictDirtyInvalidationMode() || NeedsConservativeRenderSync()) {
         return default_span;
     }
 

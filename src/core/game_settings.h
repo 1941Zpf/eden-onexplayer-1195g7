@@ -46,6 +46,7 @@ enum class GPUVendor {
 
 enum class TitleID : std::uint64_t {
     NinjaGaidenRagebound = 0x0100781020710000ULL,
+    Splatoon3 = 0x0100C2500FC20000ULL,
     ZeldaTearsOfTheKingdom = 0x0100F2C0115B6000ULL,
 };
 
