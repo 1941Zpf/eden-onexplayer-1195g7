@@ -308,32 +308,63 @@ void TextureCache<P>::CheckFeedbackLoop(std::span<const ImageViewInOut> views) {
     const u32 depth_bit = 1u << NUM_RT;
     const bool depth_active = (rt_active_mask & depth_bit) != 0;
 
+    const auto subresources_overlap = [](const SubresourceRange& lhs,
+                                         const SubresourceRange& rhs) {
+        const auto overlaps = [](s32 lhs_base, s32 lhs_extent, s32 rhs_base, s32 rhs_extent) {
+            return lhs_base < rhs_base + rhs_extent && rhs_base < lhs_base + lhs_extent;
+        };
+        return overlaps(lhs.base.level, lhs.extent.levels, rhs.base.level, rhs.extent.levels) &&
+               overlaps(lhs.base.layer, lhs.extent.layers, rhs.base.layer, rhs.extent.layers);
+    };
+
+    const auto is_active_color_feedback = [&](ImageViewId sampled_view_id, ImageId sampled_image_id,
+                                              const SubresourceRange& sampled_range) {
+        for (size_t i = 0; i < NUM_RT; ++i) {
+            if ((rt_active_mask & (1u << i)) == 0) {
+                continue;
+            }
+            const ImageViewId target_view_id = render_targets.color_buffer_ids[i];
+            if (!target_view_id) {
+                continue;
+            }
+            const auto& target_view = slot_image_views[target_view_id];
+            if (sampled_view_id == target_view_id) {
+                return true;
+            }
+            if (sampled_image_id == rt_image_id[i] &&
+                subresources_overlap(sampled_range, target_view.range)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    const auto is_active_depth_feedback = [&](ImageViewId sampled_view_id, ImageId sampled_image_id,
+                                              const SubresourceRange& sampled_range) {
+        if (!depth_active || !render_targets.depth_buffer_id) {
+            return false;
+        }
+        const auto& target_view = slot_image_views[render_targets.depth_buffer_id];
+        if (sampled_view_id == render_targets.depth_buffer_id) {
+            return true;
+        }
+        return sampled_image_id == rt_depth_image_id &&
+               subresources_overlap(sampled_range, target_view.range);
+    };
+
     const bool requires_barrier = [&] {
         for (const auto& view : views) {
             if (!view.id) {
                 continue;
             }
 
-            {
-                bool is_continue = false;
-                for (size_t i = 0; i < 8; ++i)
-                    is_continue |= (rt_active_mask & (1u << i)) && view.id == render_targets.color_buffer_ids[i];
-                if (is_continue)
-                    continue;
-            }
-
-            if (depth_active && view.id == render_targets.depth_buffer_id)
+            const auto& sampled_view = slot_image_views[view.id];
+            if (sampled_view.IsBuffer()) {
                 continue;
-
-            const ImageId view_image_id = slot_image_views[view.id].image_id;
-            {
-                bool is_continue = false;
-                for (size_t i = 0; i < 8; ++i)
-                    is_continue |= (rt_active_mask & (1u << i)) && view_image_id == rt_image_id[i];
-                if (is_continue)
-                    continue;
             }
-            if (depth_active && view_image_id == rt_depth_image_id) {
+
+            if (is_active_color_feedback(view.id, sampled_view.image_id, sampled_view.range) ||
+                is_active_depth_feedback(view.id, sampled_view.image_id, sampled_view.range)) {
                 return true;
             }
         }

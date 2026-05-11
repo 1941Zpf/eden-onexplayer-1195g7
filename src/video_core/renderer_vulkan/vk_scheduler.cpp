@@ -23,6 +23,7 @@
 #include "video_core/renderer_vulkan/vk_master_semaphore.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_state_tracker.h"
+#include "video_core/renderer_vulkan/vk_sync_profile.h"
 #include "video_core/renderer_vulkan/vk_texture_cache.h"
 #include "video_core/vulkan_common/vulkan_device.h"
 #include "video_core/vulkan_common/vulkan_wrapper.h"
@@ -289,31 +290,14 @@ u64 Scheduler::SubmitExecution(VkSemaphore signal_semaphore, VkSemaphore wait_se
     const u64 signal_value = master_semaphore->NextTick();
     RecordWithUploadBuffer([signal_semaphore, wait_semaphore, signal_value,
                             this](vk::CommandBuffer cmdbuf, vk::CommandBuffer upload_cmdbuf) {
-        static constexpr VkPipelineStageFlags LEGACY_UPLOAD_DST_STAGES =
-            VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        static constexpr VkPipelineStageFlags CONSERVATIVE_UPLOAD_DST_STAGES =
-            VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
-            VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-            VK_PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT |
-            VK_PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT |
-            VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-            VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
-            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
         static constexpr VkMemoryBarrier WRITE_BARRIER{
             .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
             .pNext = nullptr,
             .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
             .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
         };
-        const VkPipelineStageFlags upload_dst_stages =
-            Core::GameSettings::UseConservativeVulkanUploadBarriers()
-                ? CONSERVATIVE_UPLOAD_DST_STAGES
-                : LEGACY_UPLOAD_DST_STAGES;
-        upload_cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT, upload_dst_stages, 0,
-                                      WRITE_BARRIER);
+        upload_cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                      SyncProfile::UploadDstStages(), 0, WRITE_BARRIER);
         upload_cmdbuf.End();
         cmdbuf.End();
 
@@ -360,8 +344,7 @@ void Scheduler::EndPendingOperations() {
     EndRenderPass();
 }
 
-void Scheduler::EndRenderPass()
-    {
+void Scheduler::EndRenderPass() {
         if (!state.renderpass) {
             return;
         }
@@ -378,41 +361,13 @@ void Scheduler::EndRenderPass()
         Record([num_images = num_renderpass_images,
                        images = renderpass_images,
                        ranges = renderpass_image_ranges](vk::CommandBuffer cmdbuf) {
-            static constexpr VkPipelineStageFlags LEGACY_RENDERPASS_SRC_STAGES =
-                VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-                VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
-                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-            static constexpr VkPipelineStageFlags LEGACY_RENDERPASS_DST_STAGES =
-                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-            static constexpr VkAccessFlags LEGACY_RENDERPASS_DST_ACCESS =
-                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
-                VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-            static constexpr VkAccessFlags CONSERVATIVE_RENDERPASS_DST_ACCESS =
-                LEGACY_RENDERPASS_DST_ACCESS | VK_ACCESS_INPUT_ATTACHMENT_READ_BIT |
-                VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
-            const bool conservative_barriers =
-                Core::GameSettings::UseConservativeVulkanUploadBarriers();
-            const VkPipelineStageFlags dst_stage_mask =
-                conservative_barriers ? (VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-                                         VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-                                         VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
-                                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-                                         VK_PIPELINE_STAGE_TRANSFER_BIT)
-                                      : LEGACY_RENDERPASS_DST_STAGES;
-            const VkAccessFlags dst_access_mask =
-                conservative_barriers ? CONSERVATIVE_RENDERPASS_DST_ACCESS
-                                      : LEGACY_RENDERPASS_DST_ACCESS;
             std::array<VkImageMemoryBarrier, 9> barriers;
             for (size_t i = 0; i < num_images; ++i) {
                 const VkImageSubresourceRange& range = ranges[i];
                 const bool is_color = (range.aspectMask & VK_IMAGE_ASPECT_COLOR_BIT) != 0;
                 const bool is_depth_stencil = (range.aspectMask
                                               & (VK_IMAGE_ASPECT_DEPTH_BIT
-                                                 | VK_IMAGE_ASPECT_STENCIL_BIT)) !=0;
+                                                 | VK_IMAGE_ASPECT_STENCIL_BIT)) != 0;
 
                 VkAccessFlags src_access = 0;
 
@@ -428,7 +383,7 @@ void Scheduler::EndRenderPass()
                         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
                         .pNext = nullptr,
                         .srcAccessMask = src_access,
-                        .dstAccessMask = dst_access_mask,
+                        .dstAccessMask = SyncProfile::RenderPassDstAccess(),
                         .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
                         .newLayout = VK_IMAGE_LAYOUT_GENERAL,
                         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -438,13 +393,14 @@ void Scheduler::EndRenderPass()
                 };
             }
             cmdbuf.EndRenderPass();
-            cmdbuf.PipelineBarrier(LEGACY_RENDERPASS_SRC_STAGES, dst_stage_mask, 0, nullptr,
-                                   nullptr, vk::Span(barriers.data(), num_images));
+            cmdbuf.PipelineBarrier(SyncProfile::RenderPassSrcStages,
+                                   SyncProfile::RenderPassDstStages(), 0, nullptr, nullptr,
+                                   vk::Span(barriers.data(), num_images));
         });
 
         state.renderpass = VkRenderPass{};
         num_renderpass_images = 0;
-    }
+}
 
 
 void Scheduler::AcquireNewChunk() {
