@@ -7,6 +7,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <condition_variable>
 #include <cstring>
 #include <deque>
@@ -99,7 +100,13 @@ public:
             guard.unlock();
             cv.notify_all();
         }
-        rasterizer.InvalidateGPUCache();
+        const bool batch_dirty_invalidation = Core::GameSettings::UseBatchedGpuDirtyInvalidation();
+        const bool invalidate_now =
+            !batch_dirty_invalidation || should_flush ||
+            (((dirty_invalidation_counter.fetch_add(1, std::memory_order_relaxed) + 1) & 3) == 0);
+        if (invalidate_now) {
+            rasterizer.InvalidateGPUCache();
+        }
     }
 
     void SignalSyncPoint(u32 value) {
@@ -267,6 +274,7 @@ private:
     std::mutex guard;
     std::mutex ring_guard;
     std::condition_variable cv;
+    std::atomic_size_t dirty_invalidation_counter{};
 
     std::jthread fence_thread;
 

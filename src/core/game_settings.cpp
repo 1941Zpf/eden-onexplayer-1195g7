@@ -28,7 +28,7 @@ enum class ActiveProfile {
 
 std::atomic<ActiveProfile> active_profile{ActiveProfile::None};
 std::atomic_size_t vulkan_pipeline_worker_limit{0};
-constexpr const char* onexplayer_profile_version = "005";
+constexpr const char* onexplayer_profile_version = "006";
 
 bool IsTruthyEnvironmentVariable(const char* name) {
     const char* value = std::getenv(name);
@@ -61,6 +61,26 @@ std::size_t ReadWorkerLimitFromEnvironment(std::size_t fallback) {
 bool IsProfileDisabled() {
     return IsTruthyEnvironmentVariable("EDEN_1195G7_DISABLE_PROFILE") ||
            IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_DISABLE_PROFILE");
+}
+
+bool IsStrictCpuMode() {
+    return IsTruthyEnvironmentVariable("EDEN_1195G7_STRICT_CPU") ||
+           IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_STRICT_CPU");
+}
+
+bool IsStrictCacheMode() {
+    return IsTruthyEnvironmentVariable("EDEN_1195G7_STRICT_CACHE") ||
+           IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_STRICT_CACHE");
+}
+
+bool IsStrictWfiMode() {
+    return IsTruthyEnvironmentVariable("EDEN_1195G7_STRICT_WFI") ||
+           IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_STRICT_WFI");
+}
+
+bool IsStrictDirtyInvalidationMode() {
+    return IsTruthyEnvironmentVariable("EDEN_1195G7_STRICT_DIRTY") ||
+           IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_STRICT_DIRTY");
 }
 
 template <typename Setting, typename Value>
@@ -190,7 +210,9 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
     vulkan_pipeline_worker_limit.store(worker_limit, std::memory_order_release);
 
     ForceCustomSetting(Settings::values.renderer_backend, Settings::RendererBackend::Vulkan);
-    ForceCustomSetting(Settings::values.cpu_accuracy, Settings::CpuAccuracy::Auto);
+    ForceCustomSetting(Settings::values.cpu_accuracy,
+                       IsStrictCpuMode() ? Settings::CpuAccuracy::Auto
+                                         : Settings::CpuAccuracy::Unsafe);
     ForceCustomSetting(Settings::values.use_asynchronous_gpu_emulation, true);
     ForceCustomSetting(Settings::values.async_presentation, true);
     ForceCustomSetting(Settings::values.renderer_force_max_clock, false);
@@ -218,6 +240,9 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
     ForceCustomSetting(Settings::values.gpu_unswizzle_stream_size, Settings::GpuUnswizzle::Normal);
     ForceCustomSetting(Settings::values.gpu_unswizzle_chunk_size,
                        Settings::GpuUnswizzleChunk::Normal);
+    if (!IsStrictCacheMode()) {
+        ForceCustomSetting(Settings::values.skip_cpu_inner_invalidation, true);
+    }
 
     if (IsTruthyEnvironmentVariable("EDEN_1195G7_UNSAFE_CACHE") ||
         IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_UNSAFE_CACHE")) {
@@ -237,8 +262,8 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
     LOG_INFO(Core,
              "Enabled OneXPlayer i7-1195G7/Iris Xe performance profile {} for {:016X}: Vulkan "
              "pipeline workers capped at {}; resolution and frame pacing follow UI settings; "
-             "guest CPU keeps primary cores; Vulkan submission uses SMT lanes and prewarmed "
-             "command chunks",
+             "guest CPU keeps primary cores; Vulkan submission uses SMT lanes; aggressive CPU, "
+             "cache, queued invalidation, WFI and dirty-memory batching are active",
              onexplayer_profile_version,
              program_id,
              worker_limit);
@@ -336,7 +361,22 @@ std::uint32_t GetVulkanDrawDispatchMask(std::uint32_t default_mask) {
         return default_mask;
     }
 
-    return 0xFU;
+    return 0x1FU;
+}
+
+bool UseRelaxedVulkanWaitForIdle() {
+    return active_profile.load(std::memory_order_acquire) == ActiveProfile::Onexplayer1195G7 &&
+           !IsStrictWfiMode();
+}
+
+bool UseBatchedGpuDirtyInvalidation() {
+    return active_profile.load(std::memory_order_acquire) == ActiveProfile::Onexplayer1195G7 &&
+           !IsStrictDirtyInvalidationMode();
+}
+
+bool UseQueuedGpuCacheInvalidation() {
+    return active_profile.load(std::memory_order_acquire) == ActiveProfile::Onexplayer1195G7 &&
+           !IsStrictDirtyInvalidationMode();
 }
 
 std::size_t GetTextureWorkerCount(std::size_t default_workers) {
@@ -363,7 +403,7 @@ std::uint32_t GetDynarmicCodeCacheSize(std::uint32_t default_size) {
         return default_size;
     }
 
-    constexpr std::uint32_t onexplayer_code_cache_size = 768U * 1024U * 1024U;
+    constexpr std::uint32_t onexplayer_code_cache_size = 1024U * 1024U * 1024U;
     return std::max(default_size, onexplayer_code_cache_size);
 #else
     return default_size;

@@ -68,6 +68,9 @@ bool UseThermalAwareThreadScheduling();
 bool ReservePrimaryCoreForVulkanSubmission();
 bool PreferNativeVulkanSingleDraw();
 std::uint32_t GetVulkanDrawDispatchMask(std::uint32_t default_mask);
+bool UseRelaxedVulkanWaitForIdle();
+bool UseBatchedGpuDirtyInvalidation();
+bool UseQueuedGpuCacheInvalidation();
 std::uint32_t GetDynarmicCodeCacheSize(std::uint32_t default_size);
 
 } // namespace Core::GameSettings

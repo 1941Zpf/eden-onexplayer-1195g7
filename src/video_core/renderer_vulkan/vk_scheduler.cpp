@@ -94,6 +94,15 @@ void Scheduler::WaitWorker() {
     std::scoped_lock el{execution_mutex};
 }
 
+bool Scheduler::HasPendingWork() {
+    if (chunk && !chunk->Empty()) {
+        return true;
+    }
+
+    std::scoped_lock ql{queue_mutex};
+    return !work_queue.empty();
+}
+
 void Scheduler::DispatchWork() {
     if (chunk->Empty()) {
         return;

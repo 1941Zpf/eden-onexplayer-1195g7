@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <bit>
 #include <functional>
@@ -56,6 +57,23 @@ public:
                 front_buffer.emplace_back(t);
             }
         }
+        if (front_buffer.empty()) {
+            return;
+        }
+
+        std::sort(front_buffer.begin(), front_buffer.end(), [](const auto& lhs, const auto& rhs) {
+            return lhs.address < rhs.address;
+        });
+
+        PAddr pending_address{};
+        size_t pending_size{};
+        const auto flush_pending = [&] {
+            if (pending_size != 0) {
+                callback(pending_address, pending_size);
+                pending_size = 0;
+            }
+        };
+
         for (auto& transform : front_buffer) {
             size_t offset = 0;
             u64 mask = transform.mask;
@@ -65,12 +83,20 @@ public:
                 mask = mask >> empty_bits;
 
                 const size_t continuous_bits = std::countr_one(mask);
-                callback((static_cast<PAddr>(transform.address) << page_bits) + offset,
-                         continuous_bits << align_bits);
+                const PAddr address = (static_cast<PAddr>(transform.address) << page_bits) + offset;
+                const size_t range_size = continuous_bits << align_bits;
+                if (pending_size != 0 && pending_address + pending_size == address) {
+                    pending_size += range_size;
+                } else {
+                    flush_pending();
+                    pending_address = address;
+                    pending_size = range_size;
+                }
                 mask = continuous_bits < align_size ? (mask >> continuous_bits) : 0;
                 offset += continuous_bits << align_bits;
             }
         }
+        flush_pending();
         front_buffer.clear();
     }
 

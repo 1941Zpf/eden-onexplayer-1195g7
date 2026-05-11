@@ -53,6 +53,9 @@ static void RunThread(std::stop_token stop_token, Core::System& system,
             rasterizer->FlushRegion(flush->addr, flush->size);
         } else if (const auto* invalidate = std::get_if<InvalidateRegionCommand>(&command.data)) {
             rasterizer->OnCacheInvalidation(invalidate->addr, invalidate->size);
+        } else if (const auto* flush_invalidate =
+                       std::get_if<FlushAndInvalidateRegionCommand>(&command.data)) {
+            rasterizer->OnCacheInvalidation(flush_invalidate->addr, flush_invalidate->size);
         } else {
             ASSERT(false);
         }
@@ -107,11 +110,19 @@ void ThreadManager::TickGPU() {
 }
 
 void ThreadManager::InvalidateRegion(DAddr addr, u64 size) {
+    if (is_async && Core::GameSettings::UseQueuedGpuCacheInvalidation()) {
+        PushCommand(InvalidateRegionCommand(addr, size));
+        return;
+    }
     rasterizer->OnCacheInvalidation(addr, size);
 }
 
 void ThreadManager::FlushAndInvalidateRegion(DAddr addr, u64 size) {
     // Skip flush on asynch mode, as FlushAndInvalidateRegion is not used for anything too important
+    if (is_async && Core::GameSettings::UseQueuedGpuCacheInvalidation()) {
+        PushCommand(FlushAndInvalidateRegionCommand(addr, size));
+        return;
+    }
     rasterizer->OnCacheInvalidation(addr, size);
 }
 

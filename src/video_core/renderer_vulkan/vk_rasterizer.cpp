@@ -805,6 +805,12 @@ void RasterizerVulkan::FlushAndInvalidateRegion(DAddr addr, u64 size,
 }
 
 void RasterizerVulkan::WaitForIdle() {
+    if (Core::GameSettings::UseRelaxedVulkanWaitForIdle() && !scheduler.HasPendingWork()) {
+        query_cache.NotifyWFI();
+        fence_manager.SignalOrdering();
+        return;
+    }
+
     // Everything but wait pixel operations. This intentionally includes FRAGMENT_SHADER_BIT because
     // fragment shaders can still write storage buffers.
     VkPipelineStageFlags flags =

@@ -55,6 +55,9 @@ public:
     /// safe to touch worker resources.
     void WaitWorker();
 
+    /// Returns true if producer or worker-side Vulkan command work is currently queued.
+    [[nodiscard]] bool HasPendingWork();
+
     /// Sends currently recorded work to the worker thread.
     void DispatchWork();
 
