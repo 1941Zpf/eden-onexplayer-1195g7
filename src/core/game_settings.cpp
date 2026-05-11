@@ -31,7 +31,7 @@ std::atomic_size_t vulkan_pipeline_worker_limit{0};
 std::atomic_size_t queued_cache_invalidation_limit{0};
 std::atomic<std::uint64_t> gpu_cache_invalidation_coalesce_span{0};
 std::atomic<std::uint32_t> onexplayer_profile_flags{0};
-constexpr const char* onexplayer_profile_version = "013";
+constexpr const char* onexplayer_profile_version = "014";
 
 enum ProfileFlag : std::uint32_t {
     DisableProfile = 1U << 0,
@@ -274,6 +274,7 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
     ForceCustomSetting(Settings::values.barrier_feedback_loops, true);
     ForceCustomSetting(Settings::values.use_disk_shader_cache, true);
     ForceCustomSetting(Settings::values.use_vulkan_driver_pipeline_cache, true);
+    ForceCustomSetting(Settings::values.use_asynchronous_shaders, false);
     ForceCustomSetting(Settings::values.use_speed_limit, true);
     ForceCustomSetting(Settings::values.speed_limit, static_cast<u16>(100));
     ForceCustomSetting(Settings::values.gpu_unswizzle_enabled, true);
@@ -299,8 +300,8 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
              "Enabled OneXPlayer i7-1195G7/Iris Xe performance profile {} for {:016X}: Vulkan "
              "pipeline workers capped at {}; resolution and frame pacing follow UI settings; "
              "guest CPU keeps primary cores; Vulkan/background work uses shifted SMT lanes; "
-             "safe CPU/cache defaults with coalesced invalidation, bounded queued invalidation "
-             "and WFI/fence guards",
+             "safe CPU/cache defaults with coalesced invalidation, bounded queued invalidation, "
+             "conservative texture upload barriers and WFI/fence guards",
              onexplayer_profile_version,
              program_id,
              worker_limit);
@@ -417,6 +418,10 @@ bool UseGpuDirtyMemoryFastSkip() {
 bool UseQueuedGpuCacheInvalidation() {
     return active_profile.load(std::memory_order_acquire) == ActiveProfile::Onexplayer1195G7 &&
            !HasProfileFlag(StrictDirty);
+}
+
+bool UseConservativeTextureUploadBarriers() {
+    return active_profile.load(std::memory_order_acquire) == ActiveProfile::Onexplayer1195G7;
 }
 
 std::size_t GetQueuedGpuCacheInvalidationLimit(std::size_t default_limit) {
