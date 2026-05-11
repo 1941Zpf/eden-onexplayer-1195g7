@@ -552,7 +552,7 @@ void CopyBufferToImage(vk::CommandBuffer cmdbuf, VkBuffer src_buffer, VkImage im
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
         VK_PIPELINE_STAGE_TRANSFER_BIT;
     const bool conservative_barriers =
-        Core::GameSettings::UseConservativeTextureUploadBarriers();
+        Core::GameSettings::UseConservativeVulkanUploadBarriers();
     const VkPipelineStageFlags image_use_stages =
         conservative_barriers ? TEXTURE_USE_STAGES : LEGACY_TEXTURE_USE_STAGES;
     const VkAccessFlags pre_upload_access =

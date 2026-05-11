@@ -31,7 +31,7 @@ std::atomic_size_t vulkan_pipeline_worker_limit{0};
 std::atomic_size_t queued_cache_invalidation_limit{0};
 std::atomic<std::uint64_t> gpu_cache_invalidation_coalesce_span{0};
 std::atomic<std::uint32_t> onexplayer_profile_flags{0};
-constexpr const char* onexplayer_profile_version = "014";
+constexpr const char* onexplayer_profile_version = "015";
 
 enum ProfileFlag : std::uint32_t {
     DisableProfile = 1U << 0,
@@ -301,7 +301,7 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
              "pipeline workers capped at {}; resolution and frame pacing follow UI settings; "
              "guest CPU keeps primary cores; Vulkan/background work uses shifted SMT lanes; "
              "safe CPU/cache defaults with coalesced invalidation, bounded queued invalidation, "
-             "conservative texture upload barriers and WFI/fence guards",
+             "conservative Vulkan upload barriers and WFI/fence guards",
              onexplayer_profile_version,
              program_id,
              worker_limit);
@@ -420,7 +420,7 @@ bool UseQueuedGpuCacheInvalidation() {
            !HasProfileFlag(StrictDirty);
 }
 
-bool UseConservativeTextureUploadBarriers() {
+bool UseConservativeVulkanUploadBarriers() {
     return active_profile.load(std::memory_order_acquire) == ActiveProfile::Onexplayer1195G7;
 }
 
