@@ -22,7 +22,10 @@ Common::ThreadWorker& GetThreadWorkers() {
                                         Core::GameSettings::UseThermalAwareThreadScheduling()
                                             ? Common::ThreadPriority::Low
                                             : Common::ThreadPriority::Normal,
-                                        Core::GameSettings::UseThermalAwareThreadScheduling()};
+                                        Core::GameSettings::UseThermalAwareThreadScheduling(),
+                                        false,
+                                        Core::GameSettings::UseThermalAwareThreadScheduling() ? 2
+                                                                                              : 0};
 
     return workers;
 }

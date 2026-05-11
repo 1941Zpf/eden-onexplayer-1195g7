@@ -541,7 +541,9 @@ private:
         {},
         Core::GameSettings::UseThermalAwareThreadScheduling() ? Common::ThreadPriority::Low
                                                               : Common::ThreadPriority::Normal,
-        Core::GameSettings::UseThermalAwareThreadScheduling()};
+        Core::GameSettings::UseThermalAwareThreadScheduling(),
+        false,
+        Core::GameSettings::UseThermalAwareThreadScheduling() ? 2 : 0};
     std::vector<std::unique_ptr<AsyncDecodeContext>> async_decodes;
 
     std::deque<PendingUnswizzle> unswizzle_queue;

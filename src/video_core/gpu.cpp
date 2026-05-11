@@ -22,6 +22,7 @@
 #include "core/core_timing.h"
 #include "core/frontend/emu_window.h"
 #include "core/frontend/graphics_context.h"
+#include "core/game_settings.h"
 #include "core/hle/service/nvdrv/nvdata.h"
 #include "core/perf_stats.h"
 #include "video_core/cdma_pusher.h"
@@ -103,9 +104,20 @@ struct GPU::Impl {
 
     /// Synchronizes CPU writes with Host GPU memory.
     void InvalidateGPUCache() {
-        std::function<void(PAddr, size_t)> callback_writes(
-            [this](PAddr address, size_t size) { rasterizer->OnCacheInvalidation(address, size); });
-        system.GatherGPUDirtyMemory(callback_writes);
+        if (Core::GameSettings::UseGpuDirtyMemoryFastSkip() &&
+            !system.HasPendingGPUDirtyMemory()) {
+            return;
+        }
+        system.GatherGPUDirtyMemory(
+            [](void* user_data, PAddr address, size_t size) {
+                static_cast<VideoCore::RasterizerInterface*>(user_data)
+                    ->OnCacheInvalidation(address, size);
+            },
+            rasterizer);
+    }
+
+    bool HasPendingDirtyMemory() const {
+        return system.HasPendingGPUDirtyMemory();
     }
 
     /// Signal the ending of command list.
@@ -440,6 +452,10 @@ void GPU::FlushCommands() {
 
 void GPU::InvalidateGPUCache() {
     impl->InvalidateGPUCache();
+}
+
+bool GPU::HasPendingDirtyMemory() const {
+    return impl->HasPendingDirtyMemory();
 }
 
 void GPU::OnCommandListEnd() {

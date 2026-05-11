@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -291,6 +292,7 @@ private:
 
     std::queue<std::unique_ptr<CommandChunk>> work_queue;
     std::vector<std::unique_ptr<CommandChunk>> chunk_reserve;
+    std::atomic_bool worker_busy{};
     std::mutex execution_mutex;
     std::mutex reserve_mutex;
     std::mutex queue_mutex;

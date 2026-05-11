@@ -8,6 +8,7 @@
 #include <array>
 #include <memory>
 #include <mutex>
+#include <span>
 
 #include <fmt/format.h>
 
@@ -61,6 +62,33 @@ struct DrawParams {
     u32 first_index;
     bool is_indexed;
 };
+
+template <typename Func>
+void ForEachCoalescedRange(std::span<const std::pair<DAddr, std::size_t>> sequences, Func&& func) {
+    DAddr pending_addr{};
+    std::size_t pending_size{};
+
+    const auto flush_pending = [&] {
+        if (pending_size != 0) {
+            func(pending_addr, pending_size);
+            pending_size = 0;
+        }
+    };
+
+    for (const auto& [addr, size] : sequences) {
+        if (addr == 0 || size == 0) {
+            continue;
+        }
+        if (pending_size != 0 && pending_addr + pending_size == addr) {
+            pending_size += size;
+            continue;
+        }
+        flush_pending();
+        pending_addr = addr;
+        pending_size = size;
+    }
+    flush_pending();
+}
 
 VkViewport GetViewportState(const Device& device, const Maxwell& regs, size_t index, float scale) {
     const auto& src = regs.viewport_transform[index];
@@ -706,21 +734,21 @@ void RasterizerVulkan::InvalidateRegion(DAddr addr, u64 size, VideoCommon::Cache
 void RasterizerVulkan::InnerInvalidation(std::span<const std::pair<DAddr, std::size_t>> sequences) {
     {
         std::scoped_lock lock{texture_cache.mutex};
-        for (const auto& [addr, size] : sequences) {
+        ForEachCoalescedRange(sequences, [&](DAddr addr, std::size_t size) {
             texture_cache.WriteMemory(addr, size);
-        }
+        });
     }
     {
         std::scoped_lock lock{buffer_cache.mutex};
-        for (const auto& [addr, size] : sequences) {
+        ForEachCoalescedRange(sequences, [&](DAddr addr, std::size_t size) {
             buffer_cache.WriteMemory(addr, size);
-        }
+        });
     }
     {
-        for (const auto& [addr, size] : sequences) {
+        ForEachCoalescedRange(sequences, [&](DAddr addr, std::size_t size) {
             query_cache.InvalidateRegion(addr, size);
             pipeline_cache.InvalidateRegion(addr, size);
-        }
+        });
     }
 }
 

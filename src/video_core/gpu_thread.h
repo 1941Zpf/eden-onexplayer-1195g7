@@ -97,6 +97,7 @@ struct SynchState final {
     CommandQueue queue;
     u64 last_fence{};
     std::atomic<u64> signaled_fence{};
+    std::atomic_size_t pending_invalidation_count{};
     std::condition_variable_any cv;
 };
 
@@ -127,6 +128,7 @@ public:
 private:
     /// Pushes a command to be executed by the GPU thread
     u64 PushCommand(CommandData&& command_data, bool block = false);
+    bool TryPushCommand(CommandData&& command_data);
 
     Core::System& system;
     const bool is_async;

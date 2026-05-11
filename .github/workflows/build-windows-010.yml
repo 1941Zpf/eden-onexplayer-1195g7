@@ -1,4 +1,4 @@
-name: Build Windows OneXPlayer 1195G7 006
+name: Build Windows OneXPlayer 1195G7 010
 
 on:
   workflow_dispatch:
@@ -52,13 +52,13 @@ jobs:
           Get-Command cl -ErrorAction SilentlyContinue
           Get-Command glslangValidator -ErrorAction Stop
           Get-ChildItem "$env:GITHUB_WORKSPACE\tools\windows" -Force
-          Test-Path "$env:GITHUB_WORKSPACE\tools\windows\build-onexplayer-1195g7-006.ps1"
+          Test-Path "$env:GITHUB_WORKSPACE\tools\windows\build-onexplayer-1195g7-010.ps1"
 
-      - name: Build Eden OneXPlayer 006
+      - name: Build Eden OneXPlayer 010
         shell: pwsh
         run: |
           Set-ExecutionPolicy -Scope Process Bypass
-          $script = Join-Path $env:GITHUB_WORKSPACE "tools\windows\build-onexplayer-1195g7-006.ps1"
+          $script = Join-Path $env:GITHUB_WORKSPACE "tools\windows\build-onexplayer-1195g7-010.ps1"
           if (-not (Test-Path $script)) {
             Write-Host "Repository root listing:"
             Get-ChildItem $env:GITHUB_WORKSPACE -Force
@@ -69,7 +69,7 @@ jobs:
       - name: Verify artifact package
         shell: pwsh
         run: |
-          $artifact = Join-Path $env:GITHUB_WORKSPACE "artifacts\Eden-Windows-onexplayer-1195g7-006.zip"
+          $artifact = Join-Path $env:GITHUB_WORKSPACE "artifacts\Eden-Windows-onexplayer-1195g7-010.zip"
           if (-not (Test-Path $artifact)) {
             Write-Host "Repository root listing:"
             Get-ChildItem $env:GITHUB_WORKSPACE -Force
@@ -86,7 +86,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Eden-Windows-onexplayer-1195g7-006
-          path: ${{ github.workspace }}/artifacts/Eden-Windows-onexplayer-1195g7-006.zip
+          name: Eden-Windows-onexplayer-1195g7-010
+          path: ${{ github.workspace }}/artifacts/Eden-Windows-onexplayer-1195g7-010.zip
           if-no-files-found: error
           retention-days: 14

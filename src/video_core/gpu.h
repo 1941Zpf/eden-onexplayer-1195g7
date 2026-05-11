@@ -149,6 +149,8 @@ public:
     void FlushCommands();
     /// Synchronizes CPU writes with Host GPU memory.
     void InvalidateGPUCache();
+    /// Returns whether CPU writes are waiting to be synchronized with host GPU memory.
+    [[nodiscard]] bool HasPendingDirtyMemory() const;
     /// Signal the ending of command list.
     void OnCommandListEnd();
 

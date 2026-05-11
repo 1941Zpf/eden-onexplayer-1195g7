@@ -69,8 +69,10 @@ bool ReservePrimaryCoreForVulkanSubmission();
 bool PreferNativeVulkanSingleDraw();
 std::uint32_t GetVulkanDrawDispatchMask(std::uint32_t default_mask);
 bool UseRelaxedVulkanWaitForIdle();
-bool UseBatchedGpuDirtyInvalidation();
+bool UseGpuDirtyMemoryFastSkip();
 bool UseQueuedGpuCacheInvalidation();
+std::size_t GetQueuedGpuCacheInvalidationLimit(std::size_t default_limit);
+std::uint64_t GetGpuCacheInvalidationCoalesceSpan(std::uint64_t default_span);
 std::uint32_t GetDynarmicCodeCacheSize(std::uint32_t default_size);
 
 } // namespace Core::GameSettings

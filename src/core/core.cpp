@@ -604,9 +604,18 @@ std::span<GPUDirtyMemoryManager> System::GetGPUDirtyMemoryManager() {
     return impl->gpu_dirty_memory_managers;
 }
 
-void System::GatherGPUDirtyMemory(std::function<void(PAddr, size_t)>& callback) {
+bool System::HasPendingGPUDirtyMemory() {
     for (auto& manager : impl->gpu_dirty_memory_managers) {
-        manager.Gather(callback);
+        if (manager.HasPending()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void System::GatherGPUDirtyMemory(GPUDirtyMemoryCallback callback, void* user_data) {
+    for (auto& manager : impl->gpu_dirty_memory_managers) {
+        manager.Gather([&](PAddr address, size_t size) { callback(user_data, address, size); });
     }
 }
 

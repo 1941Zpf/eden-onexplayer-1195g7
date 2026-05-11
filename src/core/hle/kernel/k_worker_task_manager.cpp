@@ -29,7 +29,9 @@ KWorkerTaskManager::KWorkerTaskManager()
                        "KWorkerTaskManager",
                        {},
                        Common::ThreadPriority::Low,
-                       Core::GameSettings::UseThermalAwareThreadScheduling()) {}
+                       Core::GameSettings::UseThermalAwareThreadScheduling(),
+                       false,
+                       Core::GameSettings::UseThermalAwareThreadScheduling() ? 3 : 0) {}
 
 void KWorkerTaskManager::AddTask(KernelCore& kernel, WorkerType type, KWorkerTask* task) {
     ASSERT(type <= WorkerType::Count);

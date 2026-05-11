@@ -100,7 +100,7 @@ bool Scheduler::HasPendingWork() {
     }
 
     std::scoped_lock ql{queue_mutex};
-    return !work_queue.empty();
+    return !work_queue.empty() || worker_busy.load(std::memory_order_acquire);
 }
 
 void Scheduler::DispatchWork() {
@@ -237,6 +237,8 @@ void Scheduler::WorkerThread(std::stop_token stop_token) {
                 return;
             }
 
+            worker_busy.store(true, std::memory_order_release);
+
             // Exchange lock ownership so that we take the execution lock before
             // the queue lock goes out of scope. This allows us to force execution
             // to complete in the next step.
@@ -246,6 +248,7 @@ void Scheduler::WorkerThread(std::stop_token stop_token) {
             // before executing.
             const bool has_submit = work->HasSubmit();
             work->ExecuteAll(current_cmdbuf, current_upload_cmdbuf);
+            worker_busy.store(false, std::memory_order_release);
 
             // If the chunk was a submission, reallocate the command buffer.
             if (has_submit) {

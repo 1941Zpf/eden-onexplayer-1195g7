@@ -40,15 +40,18 @@ public:
     explicit StatefulThreadWorker(size_t num_workers, std::string name, StateMaker func = {},
                                   ThreadPriority priority = ThreadPriority::Normal,
                                   bool pin_to_physical_core_siblings = false,
-                                  bool boost_priority_work = false)
+                                  bool boost_priority_work = false,
+                                  size_t physical_core_sibling_offset = 0)
         : workers_queued{num_workers}, thread_name{std::move(name)}, thread_priority{priority},
           use_physical_core_siblings{pin_to_physical_core_siblings},
-          boost_priority_work_to_high{boost_priority_work} {
+          boost_priority_work_to_high{boost_priority_work},
+          sibling_affinity_offset{physical_core_sibling_offset} {
         const auto lambda = [this, func](std::stop_token stop_token, size_t worker_index) {
             Common::SetCurrentThreadName(thread_name.c_str());
             Common::SetCurrentThreadPriority(thread_priority);
             if (use_physical_core_siblings) {
-                Common::PinCurrentThreadToPhysicalCoreSibling(worker_index);
+                Common::PinCurrentThreadToPhysicalCoreSibling(worker_index +
+                                                              sibling_affinity_offset);
                 Common::SetCurrentThreadPowerThrottling(thread_priority == ThreadPriority::Low);
             }
             {
@@ -165,6 +168,7 @@ private:
     ThreadPriority thread_priority;
     bool use_physical_core_siblings;
     bool boost_priority_work_to_high;
+    size_t sibling_affinity_offset;
     std::vector<std::jthread> threads;
 };
 

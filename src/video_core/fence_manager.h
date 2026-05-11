@@ -100,13 +100,7 @@ public:
             guard.unlock();
             cv.notify_all();
         }
-        const bool batch_dirty_invalidation = Core::GameSettings::UseBatchedGpuDirtyInvalidation();
-        const bool invalidate_now =
-            !batch_dirty_invalidation || should_flush ||
-            (((dirty_invalidation_counter.fetch_add(1, std::memory_order_relaxed) + 1) & 3) == 0);
-        if (invalidate_now) {
-            rasterizer.InvalidateGPUCache();
-        }
+        InvalidateGPUCacheIfNeeded();
     }
 
     void SignalSyncPoint(u32 value) {
@@ -267,6 +261,12 @@ private:
         query_cache.CommitAsyncFlushes();
     }
 
+    void InvalidateGPUCacheIfNeeded() {
+        if (!Core::GameSettings::UseGpuDirtyMemoryFastSkip() || gpu.HasPendingDirtyMemory()) {
+            rasterizer.InvalidateGPUCache();
+        }
+    }
+
     std::queue<TFence> fences;
     std::deque<std::function<void()>> uncommitted_operations;
     std::deque<std::deque<std::function<void()>>> pending_operations;
@@ -274,8 +274,6 @@ private:
     std::mutex guard;
     std::mutex ring_guard;
     std::condition_variable cv;
-    std::atomic_size_t dirty_invalidation_counter{};
-
     std::jthread fence_thread;
 
     DelayedDestructionRing<TFence, 8> delayed_destruction_ring;

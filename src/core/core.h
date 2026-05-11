@@ -223,7 +223,11 @@ public:
 
     std::span<GPUDirtyMemoryManager> GetGPUDirtyMemoryManager();
 
-    void GatherGPUDirtyMemory(std::function<void(PAddr, size_t)>& callback);
+    bool HasPendingGPUDirtyMemory();
+
+    using GPUDirtyMemoryCallback = void (*)(void* user_data, PAddr address, size_t size);
+
+    void GatherGPUDirtyMemory(GPUDirtyMemoryCallback callback, void* user_data);
 
     [[nodiscard]] size_t GetCurrentHostThreadID() const;
 

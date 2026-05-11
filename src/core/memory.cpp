@@ -24,6 +24,7 @@
 #include "common/swap.h"
 #include "core/core.h"
 #include "core/device_memory.h"
+#include "core/game_settings.h"
 #include "core/gpu_dirty_memory_manager.h"
 #include "core/hardware_properties.h"
 #include "core/hle/kernel/k_page_table.h"
@@ -832,6 +833,10 @@ struct Memory::Impl {
     };
 
     void InvalidateGPUMemory(u8* p, size_t size) {
+        if (size == 0) {
+            return;
+        }
+
         constexpr size_t sys_core = Core::Hardware::NUM_CPU_CORES - 1;
         const size_t core = (std::min)(system.GetCurrentHostThreadID(),
                                      sys_core); // any other calls threads go to syscore.
@@ -848,8 +853,46 @@ struct Memory::Impl {
             }
         };
         auto& gpu = system.GPU();
+        if (!Core::GameSettings::UseQueuedGpuCacheInvalidation()) {
+            gpu_device_memory->ApplyOpOnPointer(
+                p, scratch_buffers[core],
+                [&](DAddr address) { gpu.InvalidateRegion(address, size); });
+            return;
+        }
+
+        DAddr pending_address{};
+        u64 pending_size{};
+        const u64 max_coalesced_span =
+            Core::GameSettings::GetGpuCacheInvalidationCoalesceSpan(256ULL * 1024ULL);
+        const auto flush_pending = [&] {
+            if (pending_size != 0) {
+                gpu.InvalidateRegion(pending_address, pending_size);
+                pending_size = 0;
+            }
+        };
+        const auto absorb_invalidation = [&](DAddr address) {
+            if (address == 0) {
+                return;
+            }
+            const u64 range_size = static_cast<u64>(size);
+            const DAddr pending_end = pending_address + pending_size;
+            const DAddr range_end = address + range_size;
+            if (pending_size != 0 && pending_end >= address && range_end >= pending_address) {
+                const DAddr merged_address = std::min(pending_address, address);
+                const DAddr merged_end = std::max(pending_end, range_end);
+                if (merged_end - merged_address <= max_coalesced_span) {
+                    pending_address = merged_address;
+                    pending_size = merged_end - merged_address;
+                    return;
+                }
+            }
+            flush_pending();
+            pending_address = address;
+            pending_size = range_size;
+        };
         gpu_device_memory->ApplyOpOnPointer(
-            p, scratch_buffers[core], [&](DAddr address) { gpu.InvalidateRegion(address, size); });
+            p, scratch_buffers[core], [&](DAddr address) { absorb_invalidation(address); });
+        flush_pending();
     }
 
     Core::System& system;

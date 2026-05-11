@@ -375,14 +375,17 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
                   device.HasBrokenParallelShaderCompiling() ? 1ULL : GetTotalPipelineWorkers()),
               "VkPipelineBuilder", {}, Common::ThreadPriority::Normal,
               Core::GameSettings::UseThermalAwareThreadScheduling(),
-              Core::GameSettings::UseThermalAwareThreadScheduling()),
+              Core::GameSettings::UseThermalAwareThreadScheduling(),
+              Core::GameSettings::UseThermalAwareThreadScheduling() ? 1 : 0),
       serialization_thread(1,
                            "VkPipelineSerialization",
                            {},
                            Core::GameSettings::UseThermalAwareThreadScheduling()
                                ? Common::ThreadPriority::Low
                                : Common::ThreadPriority::Normal,
-                           Core::GameSettings::UseThermalAwareThreadScheduling()) {
+                           Core::GameSettings::UseThermalAwareThreadScheduling(),
+                           false,
+                           Core::GameSettings::UseThermalAwareThreadScheduling() ? 3 : 0) {
     const auto& float_control{device.FloatControlProperties()};
     const VkDriverId driver_id{device.GetDriverID()};
     profile = Shader::Profile{

@@ -28,7 +28,7 @@ enum class ActiveProfile {
 
 std::atomic<ActiveProfile> active_profile{ActiveProfile::None};
 std::atomic_size_t vulkan_pipeline_worker_limit{0};
-constexpr const char* onexplayer_profile_version = "006";
+constexpr const char* onexplayer_profile_version = "010";
 
 bool IsTruthyEnvironmentVariable(const char* name) {
     const char* value = std::getenv(name);
@@ -210,9 +210,7 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
     vulkan_pipeline_worker_limit.store(worker_limit, std::memory_order_release);
 
     ForceCustomSetting(Settings::values.renderer_backend, Settings::RendererBackend::Vulkan);
-    ForceCustomSetting(Settings::values.cpu_accuracy,
-                       IsStrictCpuMode() ? Settings::CpuAccuracy::Auto
-                                         : Settings::CpuAccuracy::Unsafe);
+    ForceCustomSetting(Settings::values.cpu_accuracy, Settings::CpuAccuracy::Auto);
     ForceCustomSetting(Settings::values.use_asynchronous_gpu_emulation, true);
     ForceCustomSetting(Settings::values.async_presentation, true);
     ForceCustomSetting(Settings::values.renderer_force_max_clock, false);
@@ -240,12 +238,9 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
     ForceCustomSetting(Settings::values.gpu_unswizzle_stream_size, Settings::GpuUnswizzle::Normal);
     ForceCustomSetting(Settings::values.gpu_unswizzle_chunk_size,
                        Settings::GpuUnswizzleChunk::Normal);
-    if (!IsStrictCacheMode()) {
-        ForceCustomSetting(Settings::values.skip_cpu_inner_invalidation, true);
-    }
-
-    if (IsTruthyEnvironmentVariable("EDEN_1195G7_UNSAFE_CACHE") ||
-        IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_UNSAFE_CACHE")) {
+    if (!IsStrictCacheMode() &&
+        (IsTruthyEnvironmentVariable("EDEN_1195G7_UNSAFE_CACHE") ||
+         IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_UNSAFE_CACHE"))) {
         ForceCustomSetting(Settings::values.skip_cpu_inner_invalidation, true);
     }
 
@@ -254,16 +249,18 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
         ForceCustomSetting(Settings::values.use_asynchronous_shaders, true);
     }
 
-    if (IsTruthyEnvironmentVariable("EDEN_1195G7_UNSAFE_CPU") ||
-        IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_UNSAFE_CPU")) {
+    if (!IsStrictCpuMode() &&
+        (IsTruthyEnvironmentVariable("EDEN_1195G7_UNSAFE_CPU") ||
+         IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_UNSAFE_CPU"))) {
         ForceCustomSetting(Settings::values.cpu_accuracy, Settings::CpuAccuracy::Unsafe);
     }
 
     LOG_INFO(Core,
              "Enabled OneXPlayer i7-1195G7/Iris Xe performance profile {} for {:016X}: Vulkan "
              "pipeline workers capped at {}; resolution and frame pacing follow UI settings; "
-             "guest CPU keeps primary cores; Vulkan submission uses SMT lanes; aggressive CPU, "
-             "cache, queued invalidation, WFI and dirty-memory batching are active",
+             "guest CPU keeps primary cores; Vulkan/background work uses shifted SMT lanes; "
+             "safe CPU/cache defaults with coalesced invalidation, bounded queued invalidation "
+             "and WFI/fence guards",
              onexplayer_profile_version,
              program_id,
              worker_limit);
@@ -369,7 +366,7 @@ bool UseRelaxedVulkanWaitForIdle() {
            !IsStrictWfiMode();
 }
 
-bool UseBatchedGpuDirtyInvalidation() {
+bool UseGpuDirtyMemoryFastSkip() {
     return active_profile.load(std::memory_order_acquire) == ActiveProfile::Onexplayer1195G7 &&
            !IsStrictDirtyInvalidationMode();
 }
@@ -377,6 +374,24 @@ bool UseBatchedGpuDirtyInvalidation() {
 bool UseQueuedGpuCacheInvalidation() {
     return active_profile.load(std::memory_order_acquire) == ActiveProfile::Onexplayer1195G7 &&
            !IsStrictDirtyInvalidationMode();
+}
+
+std::size_t GetQueuedGpuCacheInvalidationLimit(std::size_t default_limit) {
+    if (active_profile.load(std::memory_order_acquire) != ActiveProfile::Onexplayer1195G7 ||
+        IsStrictDirtyInvalidationMode()) {
+        return default_limit;
+    }
+
+    return 64;
+}
+
+std::uint64_t GetGpuCacheInvalidationCoalesceSpan(std::uint64_t default_span) {
+    if (active_profile.load(std::memory_order_acquire) != ActiveProfile::Onexplayer1195G7 ||
+        IsStrictDirtyInvalidationMode()) {
+        return default_span;
+    }
+
+    return 256ULL * 1024ULL;
 }
 
 std::size_t GetTextureWorkerCount(std::size_t default_workers) {
