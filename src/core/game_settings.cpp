@@ -28,7 +28,21 @@ enum class ActiveProfile {
 
 std::atomic<ActiveProfile> active_profile{ActiveProfile::None};
 std::atomic_size_t vulkan_pipeline_worker_limit{0};
-constexpr const char* onexplayer_profile_version = "012";
+std::atomic_size_t queued_cache_invalidation_limit{0};
+std::atomic<std::uint64_t> gpu_cache_invalidation_coalesce_span{0};
+std::atomic<std::uint32_t> onexplayer_profile_flags{0};
+constexpr const char* onexplayer_profile_version = "013";
+
+enum ProfileFlag : std::uint32_t {
+    DisableProfile = 1U << 0,
+    StrictCpu = 1U << 1,
+    StrictCache = 1U << 2,
+    StrictWfi = 1U << 3,
+    StrictDirty = 1U << 4,
+    UnsafeCache = 1U << 5,
+    AsyncShaders = 1U << 6,
+    UnsafeCpu = 1U << 7,
+};
 
 bool IsTruthyEnvironmentVariable(const char* name) {
     const char* value = std::getenv(name);
@@ -38,6 +52,52 @@ bool IsTruthyEnvironmentVariable(const char* name) {
 
     return std::strcmp(value, "0") != 0 && std::strcmp(value, "false") != 0 &&
            std::strcmp(value, "FALSE") != 0;
+}
+
+bool IsAnyTruthyEnvironmentVariable(const char* primary, const char* legacy) {
+    return IsTruthyEnvironmentVariable(primary) || IsTruthyEnvironmentVariable(legacy);
+}
+
+std::uint32_t ReadProfileFlagsFromEnvironment() {
+    std::uint32_t flags{};
+    if (IsAnyTruthyEnvironmentVariable("EDEN_1195G7_DISABLE_PROFILE",
+                                       "EDEN_TOTK_1195G7_DISABLE_PROFILE")) {
+        flags |= DisableProfile;
+    }
+    if (IsAnyTruthyEnvironmentVariable("EDEN_1195G7_STRICT_CPU",
+                                       "EDEN_TOTK_1195G7_STRICT_CPU")) {
+        flags |= StrictCpu;
+    }
+    if (IsAnyTruthyEnvironmentVariable("EDEN_1195G7_STRICT_CACHE",
+                                       "EDEN_TOTK_1195G7_STRICT_CACHE")) {
+        flags |= StrictCache;
+    }
+    if (IsAnyTruthyEnvironmentVariable("EDEN_1195G7_STRICT_WFI",
+                                       "EDEN_TOTK_1195G7_STRICT_WFI")) {
+        flags |= StrictWfi;
+    }
+    if (IsAnyTruthyEnvironmentVariable("EDEN_1195G7_STRICT_DIRTY",
+                                       "EDEN_TOTK_1195G7_STRICT_DIRTY")) {
+        flags |= StrictDirty;
+    }
+    if (IsAnyTruthyEnvironmentVariable("EDEN_1195G7_UNSAFE_CACHE",
+                                       "EDEN_TOTK_1195G7_UNSAFE_CACHE")) {
+        flags |= UnsafeCache;
+    }
+    if (IsAnyTruthyEnvironmentVariable("EDEN_1195G7_ASYNC_SHADERS",
+                                       "EDEN_TOTK_1195G7_ASYNC_SHADERS")) {
+        flags |= AsyncShaders;
+    }
+    if (IsAnyTruthyEnvironmentVariable("EDEN_1195G7_UNSAFE_CPU",
+                                       "EDEN_TOTK_1195G7_UNSAFE_CPU")) {
+        flags |= UnsafeCpu;
+    }
+    return flags;
+}
+
+bool HasProfileFlag(ProfileFlag flag) {
+    return (onexplayer_profile_flags.load(std::memory_order_acquire) &
+            static_cast<std::uint32_t>(flag)) != 0;
 }
 
 std::size_t ReadWorkerLimitFromEnvironment(std::size_t fallback) {
@@ -61,26 +121,6 @@ std::size_t ReadWorkerLimitFromEnvironment(std::size_t fallback) {
 bool IsProfileDisabled() {
     return IsTruthyEnvironmentVariable("EDEN_1195G7_DISABLE_PROFILE") ||
            IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_DISABLE_PROFILE");
-}
-
-bool IsStrictCpuMode() {
-    return IsTruthyEnvironmentVariable("EDEN_1195G7_STRICT_CPU") ||
-           IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_STRICT_CPU");
-}
-
-bool IsStrictCacheMode() {
-    return IsTruthyEnvironmentVariable("EDEN_1195G7_STRICT_CACHE") ||
-           IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_STRICT_CACHE");
-}
-
-bool IsStrictWfiMode() {
-    return IsTruthyEnvironmentVariable("EDEN_1195G7_STRICT_WFI") ||
-           IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_STRICT_WFI");
-}
-
-bool IsStrictDirtyInvalidationMode() {
-    return IsTruthyEnvironmentVariable("EDEN_1195G7_STRICT_DIRTY") ||
-           IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_STRICT_DIRTY");
 }
 
 template <typename Setting, typename Value>
@@ -201,13 +241,17 @@ EnvironmentInfo DetectEnvironment(const VideoCore::RendererBase& renderer) {
 bool LoadEarlyOverrides(std::uint64_t program_id) {
     ResetOverrides();
 
-    if (!ShouldUse1195G7Profile()) {
+    const std::uint32_t flags = ReadProfileFlagsFromEnvironment();
+    onexplayer_profile_flags.store(flags, std::memory_order_release);
+    if ((flags & DisableProfile) != 0) {
         return false;
     }
 
     active_profile.store(ActiveProfile::Onexplayer1195G7, std::memory_order_release);
     const std::size_t worker_limit = ReadWorkerLimitFromEnvironment(3);
     vulkan_pipeline_worker_limit.store(worker_limit, std::memory_order_release);
+    queued_cache_invalidation_limit.store(64, std::memory_order_release);
+    gpu_cache_invalidation_coalesce_span.store(256ULL * 1024ULL, std::memory_order_release);
 
     ForceCustomSetting(Settings::values.renderer_backend, Settings::RendererBackend::Vulkan);
     ForceCustomSetting(Settings::values.cpu_accuracy, Settings::CpuAccuracy::Auto);
@@ -239,20 +283,15 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
     ForceCustomSetting(Settings::values.gpu_unswizzle_chunk_size,
                        Settings::GpuUnswizzleChunk::Normal);
 
-    if (!IsStrictCacheMode() &&
-        (IsTruthyEnvironmentVariable("EDEN_1195G7_UNSAFE_CACHE") ||
-         IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_UNSAFE_CACHE"))) {
+    if ((flags & StrictCache) == 0 && (flags & UnsafeCache) != 0) {
         ForceCustomSetting(Settings::values.skip_cpu_inner_invalidation, true);
     }
 
-    if (IsTruthyEnvironmentVariable("EDEN_1195G7_ASYNC_SHADERS") ||
-        IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_ASYNC_SHADERS")) {
+    if ((flags & AsyncShaders) != 0) {
         ForceCustomSetting(Settings::values.use_asynchronous_shaders, true);
     }
 
-    if (!IsStrictCpuMode() &&
-        (IsTruthyEnvironmentVariable("EDEN_1195G7_UNSAFE_CPU") ||
-         IsTruthyEnvironmentVariable("EDEN_TOTK_1195G7_UNSAFE_CPU"))) {
+    if ((flags & StrictCpu) == 0 && (flags & UnsafeCpu) != 0) {
         ForceCustomSetting(Settings::values.cpu_accuracy, Settings::CpuAccuracy::Unsafe);
     }
 
@@ -290,6 +329,9 @@ void ResetOverrides() {
     const ActiveProfile previous = active_profile.exchange(ActiveProfile::None,
                                                            std::memory_order_acq_rel);
     vulkan_pipeline_worker_limit.store(0, std::memory_order_release);
+    queued_cache_invalidation_limit.store(0, std::memory_order_release);
+    gpu_cache_invalidation_coalesce_span.store(0, std::memory_order_release);
+    onexplayer_profile_flags.store(0, std::memory_order_release);
     Settings::values.use_squashed_iterated_blend = false;
 
     if (previous == ActiveProfile::None) {
@@ -364,35 +406,38 @@ std::uint32_t GetVulkanDrawDispatchMask(std::uint32_t default_mask) {
 
 bool UseRelaxedVulkanWaitForIdle() {
     return active_profile.load(std::memory_order_acquire) == ActiveProfile::Onexplayer1195G7 &&
-           !IsStrictWfiMode();
+           !HasProfileFlag(StrictWfi);
 }
 
 bool UseGpuDirtyMemoryFastSkip() {
     return active_profile.load(std::memory_order_acquire) == ActiveProfile::Onexplayer1195G7 &&
-           !IsStrictDirtyInvalidationMode();
+           !HasProfileFlag(StrictDirty);
 }
 
 bool UseQueuedGpuCacheInvalidation() {
     return active_profile.load(std::memory_order_acquire) == ActiveProfile::Onexplayer1195G7 &&
-           !IsStrictDirtyInvalidationMode();
+           !HasProfileFlag(StrictDirty);
 }
 
 std::size_t GetQueuedGpuCacheInvalidationLimit(std::size_t default_limit) {
     if (active_profile.load(std::memory_order_acquire) != ActiveProfile::Onexplayer1195G7 ||
-        IsStrictDirtyInvalidationMode()) {
+        HasProfileFlag(StrictDirty)) {
         return default_limit;
     }
 
-    return 64;
+    const std::size_t limit = queued_cache_invalidation_limit.load(std::memory_order_acquire);
+    return limit != 0 ? limit : default_limit;
 }
 
 std::uint64_t GetGpuCacheInvalidationCoalesceSpan(std::uint64_t default_span) {
     if (active_profile.load(std::memory_order_acquire) != ActiveProfile::Onexplayer1195G7 ||
-        IsStrictDirtyInvalidationMode()) {
+        HasProfileFlag(StrictDirty)) {
         return default_span;
     }
 
-    return 256ULL * 1024ULL;
+    const std::uint64_t span =
+        gpu_cache_invalidation_coalesce_span.load(std::memory_order_acquire);
+    return span != 0 ? span : default_span;
 }
 
 std::size_t GetTextureWorkerCount(std::size_t default_workers) {
