@@ -26,6 +26,19 @@ enum class VoteOp : u64 {
     }
 }
 
+[[nodiscard]] IR::U1 SingleThreadVoteOperation(IR::IREmitter& ir, const IR::U1& pred,
+                                               VoteOp vote_op) {
+    switch (vote_op) {
+    case VoteOp::ALL:
+    case VoteOp::ANY:
+        return pred;
+    case VoteOp::EQ:
+        return ir.Imm1(true);
+    default:
+        throw NotImplementedException("Invalid VOTE op {}", vote_op);
+    }
+}
+
 void Vote(TranslatorVisitor& v, u64 insn) {
     union {
         u64 insn;
@@ -40,6 +53,22 @@ void Vote(TranslatorVisitor& v, u64 insn) {
     v.ir.SetPred(vote.pred_b, VoteOperation(v.ir, vote_pred, vote.vote_op));
     v.X(vote.dest_reg, v.ir.SubgroupBallot(vote_pred));
 }
+
+void VoteVtg(TranslatorVisitor& v, u64 insn) {
+    union {
+        u64 insn;
+        BitField<0, 8, IR::Reg> dest_reg;
+        BitField<39, 3, IR::Pred> pred_a;
+        BitField<42, 1, u64> neg_pred_a;
+        BitField<45, 3, IR::Pred> pred_b;
+        BitField<48, 2, VoteOp> vote_op;
+    } const vote{insn};
+
+    const IR::U1 vote_pred{v.ir.GetPred(vote.pred_a, vote.neg_pred_a != 0)};
+    v.ir.SetPred(vote.pred_b, SingleThreadVoteOperation(v.ir, vote_pred, vote.vote_op));
+    const IR::U32 ballot{v.ir.Select(vote_pred, v.ir.Imm32(1), v.ir.Imm32(0))};
+    v.X(vote.dest_reg, ballot);
+}
 } // Anonymous namespace
 
 void TranslatorVisitor::VOTE(u64 insn) {
@@ -47,7 +76,7 @@ void TranslatorVisitor::VOTE(u64 insn) {
 }
 
 void TranslatorVisitor::VOTE_vtg(u64 insn) {
-    Vote(*this, insn);
+    VoteVtg(*this, insn);
 }
 
 } // namespace Shader::Maxwell
