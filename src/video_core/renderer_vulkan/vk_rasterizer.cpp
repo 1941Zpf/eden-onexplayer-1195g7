@@ -403,8 +403,11 @@ void RasterizerVulkan::DrawTexture() {
                               maxwell3d->regs.zpass_pixel_count_enable);
     const auto& draw_texture_state = maxwell3d->draw_manager->GetDrawTextureState();
     const auto& sampler = texture_cache.GetGraphicsSampler(draw_texture_state.src_sampler);
-    const auto& texture = texture_cache.GetImageView(draw_texture_state.src_texture);
+    const ImageViewId texture_id = texture_cache.GetGraphicsImageViewId(draw_texture_state.src_texture);
+    const auto& texture = texture_cache.GetImageView(texture_id);
     const auto* framebuffer = texture_cache.GetFramebuffer();
+    const std::array feedback_views{VideoCommon::ImageViewInOut{.id = texture_id}};
+    texture_cache.CheckFeedbackLoop(feedback_views);
 
     const bool src_rescaling = texture_cache.IsRescaling() && texture.IsRescaled();
     const bool dst_rescaling = texture_cache.IsRescaling() && framebuffer->IsRescaled();

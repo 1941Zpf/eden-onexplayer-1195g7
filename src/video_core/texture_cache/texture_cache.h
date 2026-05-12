@@ -262,9 +262,13 @@ typename P::ImageView& TextureCache<P>::GetImageView(ImageViewId id) noexcept {
 
 template <class P>
 typename P::ImageView& TextureCache<P>::GetImageView(u32 index) noexcept {
-    const auto image_view_id = VisitImageView(channel_state->graphics_image_table,
-                                              channel_state->graphics_image_view_ids, index);
-    return slot_image_views[image_view_id];
+    return slot_image_views[GetGraphicsImageViewId(index)];
+}
+
+template <class P>
+ImageViewId TextureCache<P>::GetGraphicsImageViewId(u32 index) noexcept {
+    return VisitImageView(channel_state->graphics_image_table, channel_state->graphics_image_view_ids,
+                          index);
 }
 
 template <class P>
@@ -291,8 +295,29 @@ void TextureCache<P>::CheckFeedbackLoop(std::span<const ImageViewInOut> views) {
         return;
     }
 
+    const u64 feedback_views_signature = [&] {
+        const auto mix = [](u64 signature, u64 value) {
+            return signature ^ (value + 0x9E3779B97F4A7C15ULL + (signature << 6) + (signature >> 2));
+        };
+        u64 signature = 0x9E3779B185EBCA87ULL ^ static_cast<u64>(views.size());
+        for (const auto& view : views) {
+            if (!view.id || view.id == NULL_IMAGE_VIEW_ID || view.id == CORRUPT_ID) {
+                continue;
+            }
+            const auto& sampled_view = slot_image_views[view.id];
+            signature = mix(signature, static_cast<u64>(view.id.index));
+            signature = mix(signature, static_cast<u64>(sampled_view.image_id.index));
+            signature = mix(signature, static_cast<u64>(sampled_view.range.base.level));
+            signature = mix(signature, static_cast<u64>(sampled_view.range.base.layer));
+            signature = mix(signature, static_cast<u64>(sampled_view.range.extent.levels));
+            signature = mix(signature, static_cast<u64>(sampled_view.range.extent.layers));
+        }
+        return signature;
+    }();
+
     if (render_targets_serial == last_feedback_loop_serial &&
-        texture_bindings_serial == last_feedback_texture_serial) {
+        texture_bindings_serial == last_feedback_texture_serial &&
+        feedback_views_signature == last_feedback_views_signature) {
         if (last_feedback_loop_result) {
             runtime.BarrierFeedbackLoop();
         }
@@ -302,6 +327,7 @@ void TextureCache<P>::CheckFeedbackLoop(std::span<const ImageViewInOut> views) {
     if (rt_active_mask == 0) {
         last_feedback_loop_serial = render_targets_serial;
         last_feedback_texture_serial = texture_bindings_serial;
+        last_feedback_views_signature = feedback_views_signature;
         last_feedback_loop_result = false;
         return;
     }
@@ -318,11 +344,20 @@ void TextureCache<P>::CheckFeedbackLoop(std::span<const ImageViewInOut> views) {
     };
 
     const auto images_alias = [&](ImageId sampled_image_id, ImageId target_image_id) {
-        if (!sampled_image_id || !target_image_id || sampled_image_id == target_image_id) {
+        if (!sampled_image_id || !target_image_id || sampled_image_id == NULL_IMAGE_ID ||
+            target_image_id == NULL_IMAGE_ID || sampled_image_id == CORRUPT_ID ||
+            target_image_id == CORRUPT_ID || sampled_image_id == target_image_id) {
             return false;
         }
         const auto& sampled_image = slot_images[sampled_image_id];
         const auto& target_image = slot_images[target_image_id];
+        const auto has_alias_metadata = [](const ImageBase& image) {
+            return True(image.flags & (ImageFlagBits::Alias | ImageFlagBits::BadOverlap)) ||
+                   !image.aliased_images.empty() || !image.overlapping_images.empty();
+        };
+        if (!has_alias_metadata(sampled_image) && !has_alias_metadata(target_image)) {
+            return false;
+        }
         return sampled_image.OverlapsGPU(target_image.gpu_addr, target_image.guest_size_bytes);
     };
 
@@ -333,7 +368,7 @@ void TextureCache<P>::CheckFeedbackLoop(std::span<const ImageViewInOut> views) {
                 continue;
             }
             const ImageViewId target_view_id = render_targets.color_buffer_ids[i];
-            if (!target_view_id) {
+            if (!target_view_id || target_view_id == NULL_IMAGE_VIEW_ID || target_view_id == CORRUPT_ID) {
                 continue;
             }
             const auto& target_view = slot_image_views[target_view_id];
@@ -356,6 +391,10 @@ void TextureCache<P>::CheckFeedbackLoop(std::span<const ImageViewInOut> views) {
         if (!depth_active || !render_targets.depth_buffer_id) {
             return false;
         }
+        if (render_targets.depth_buffer_id == NULL_IMAGE_VIEW_ID ||
+            render_targets.depth_buffer_id == CORRUPT_ID) {
+            return false;
+        }
         const auto& target_view = slot_image_views[render_targets.depth_buffer_id];
         if (sampled_view_id == render_targets.depth_buffer_id) {
             return true;
@@ -369,7 +408,7 @@ void TextureCache<P>::CheckFeedbackLoop(std::span<const ImageViewInOut> views) {
 
     const bool requires_barrier = [&] {
         for (const auto& view : views) {
-            if (!view.id) {
+            if (!view.id || view.id == NULL_IMAGE_VIEW_ID || view.id == CORRUPT_ID) {
                 continue;
             }
 
@@ -389,6 +428,7 @@ void TextureCache<P>::CheckFeedbackLoop(std::span<const ImageViewInOut> views) {
 
     last_feedback_loop_serial = render_targets_serial;
     last_feedback_texture_serial = texture_bindings_serial;
+    last_feedback_views_signature = feedback_views_signature;
     last_feedback_loop_result = requires_barrier;
     if (requires_barrier) {
         runtime.BarrierFeedbackLoop();
@@ -696,7 +736,11 @@ ImageViewId TextureCache<P>::VisitImageView(DescriptorTable<TICEntry>& table,
     const auto [descriptor, is_new] = table.Read(index);
     ImageViewId& image_view_id = cached_image_view_ids[index];
     if (is_new) {
+        const ImageViewId old_image_view_id = image_view_id;
         image_view_id = FindImageView(descriptor);
+        if (image_view_id != old_image_view_id) {
+            ++texture_bindings_serial;
+        }
     }
     if (image_view_id != NULL_IMAGE_VIEW_ID) {
         PrepareImageView(image_view_id, false, false);
@@ -1865,12 +1909,14 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
     });
 
     ImageBase& new_image_base = new_image;
+    bool alias_topology_changed = false;
     for (const ImageId aliased_id : join_right_aliased_ids) {
         ImageBase& aliased = slot_images[aliased_id];
         size_t alias_index = new_image_base.aliased_images.size();
         if (!AddImageAlias(new_image_base, aliased, new_image_id, aliased_id)) {
             continue;
         }
+        alias_topology_changed = true;
         join_alias_indices.emplace(aliased_id, alias_index);
         new_image.flags |= ImageFlagBits::Alias;
     }
@@ -1880,6 +1926,7 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
         if (!AddImageAlias(aliased, new_image_base, aliased_id, new_image_id)) {
             continue;
         }
+        alias_topology_changed = true;
         join_alias_indices.emplace(aliased_id, alias_index);
         new_image.flags |= ImageFlagBits::Alias;
     }
@@ -1887,6 +1934,7 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
         ImageBase& aliased = slot_images[aliased_id];
         aliased.overlapping_images.push_back(new_image_id);
         new_image.overlapping_images.push_back(aliased_id);
+        alias_topology_changed = true;
         if (aliased.info.resources.levels == 1 && aliased.info.block.depth == 0 &&
             aliased.overlapping_images.size() > 1) {
             aliased.flags |= ImageFlagBits::BadOverlap;
@@ -1895,6 +1943,9 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
             new_image.overlapping_images.size() > 1) {
             new_image.flags |= ImageFlagBits::BadOverlap;
         }
+    }
+    if (alias_topology_changed) {
+        ++texture_bindings_serial;
     }
 
     for (const auto& copy_object : join_copies_to_do) {
