@@ -170,6 +170,7 @@ private:
 
     std::filesystem::path vulkan_pipeline_cache_filename;
     vk::PipelineCache vulkan_pipeline_cache;
+    std::mutex vulkan_pipeline_cache_mutex;
 
     Common::ThreadWorker workers;
     Common::ThreadWorker serialization_thread;

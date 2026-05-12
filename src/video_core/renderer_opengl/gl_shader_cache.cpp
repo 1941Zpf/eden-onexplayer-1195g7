@@ -344,7 +344,9 @@ void ShaderCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading,
     if (strict_context_required) {
         return;
     }
-    workers->WaitForRequests(stop_loading);
+    // These workers are reused after disk-cache loading; finish queued startup work without
+    // stopping the worker threads.
+    workers->WaitForRequests();
     if (!use_asynchronous_shaders) {
         workers.reset();
     }

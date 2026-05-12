@@ -78,7 +78,8 @@ public:
         const Device& device, DescriptorPool& descriptor_pool,
         GuestDescriptorQueue& guest_descriptor_queue, Common::ThreadWorker* worker_thread,
         PipelineStatistics* pipeline_statistics, RenderPassCache& render_pass_cache,
-        const GraphicsPipelineCacheKey& key, std::array<vk::ShaderModule, NUM_STAGES> stages,
+        std::mutex& pipeline_cache_mutex, const GraphicsPipelineCacheKey& key,
+        std::array<vk::ShaderModule, NUM_STAGES> stages,
         const std::array<const Shader::Info*, NUM_STAGES>& infos);
 
     bool HasDynamicVertexInput() const noexcept { return key.state.dynamic_vertex_input; }
@@ -146,6 +147,7 @@ private:
     TextureCache& texture_cache;
     BufferCache& buffer_cache;
     vk::PipelineCache& pipeline_cache;
+    std::mutex& pipeline_cache_mutex;
     Scheduler& scheduler;
     GuestDescriptorQueue& guest_descriptor_queue;
 

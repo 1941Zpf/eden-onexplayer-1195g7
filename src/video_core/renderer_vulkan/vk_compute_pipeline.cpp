@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <mutex>
 #include <vector>
 
 #include <boost/container/small_vector.hpp>
@@ -32,6 +33,7 @@ using Shader::Backend::SPIRV::RESCALING_LAYOUT_WORDS_OFFSET;
 using Tegra::Texture::TexturePair;
 
 ComputePipeline::ComputePipeline(const Device& device_, vk::PipelineCache& pipeline_cache_,
+                                 std::mutex& pipeline_cache_mutex_,
                                  DescriptorPool& descriptor_pool,
                                  GuestDescriptorQueue& guest_descriptor_queue_,
                                  Common::ThreadWorker* thread_worker,
@@ -39,7 +41,8 @@ ComputePipeline::ComputePipeline(const Device& device_, vk::PipelineCache& pipel
                                  VideoCore::ShaderNotify* shader_notify, const Shader::Info& info_,
                                  vk::ShaderModule spv_module_)
     : device{device_},
-      pipeline_cache(pipeline_cache_), guest_descriptor_queue{guest_descriptor_queue_}, info{info_},
+      pipeline_cache(pipeline_cache_), pipeline_cache_mutex{pipeline_cache_mutex_},
+      guest_descriptor_queue{guest_descriptor_queue_}, info{info_},
       spv_module(std::move(spv_module_)) {
     if (shader_notify) {
         shader_notify->MarkShaderBuilding();
@@ -68,7 +71,7 @@ ComputePipeline::ComputePipeline(const Device& device_, vk::PipelineCache& pipel
         if (device.IsKhrPipelineExecutablePropertiesEnabled() && Settings::values.renderer_debug.GetValue()) {
             flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
         }
-        pipeline = device.GetLogical().CreateComputePipeline(VkComputePipelineCreateInfo{
+        VkComputePipelineCreateInfo pipeline_ci{
             .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
             .pNext = nullptr,
             .flags = flags,
@@ -85,7 +88,11 @@ ComputePipeline::ComputePipeline(const Device& device_, vk::PipelineCache& pipel
             .layout = *pipeline_layout,
             .basePipelineHandle = 0,
             .basePipelineIndex = 0,
-        }, *pipeline_cache);
+        };
+        {
+            std::scoped_lock lock{pipeline_cache_mutex};
+            pipeline = device.GetLogical().CreateComputePipeline(pipeline_ci, *pipeline_cache);
+        }
 
         // Log compute pipeline creation
         if (Settings::values.gpu_logging_enabled.GetValue()) {

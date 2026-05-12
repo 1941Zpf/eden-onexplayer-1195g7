@@ -31,7 +31,7 @@ std::atomic_size_t vulkan_pipeline_worker_limit{0};
 std::atomic_size_t queued_cache_invalidation_limit{0};
 std::atomic<std::uint64_t> gpu_cache_invalidation_coalesce_span{0};
 std::atomic<std::uint32_t> onexplayer_profile_flags{0};
-constexpr const char* onexplayer_profile_version = "021";
+constexpr const char* onexplayer_profile_version = "022";
 
 enum ProfileFlag : std::uint32_t {
     DisableProfile = 1U << 0,
@@ -43,6 +43,7 @@ enum ProfileFlag : std::uint32_t {
     AsyncShaders = 1U << 6,
     UnsafeCpu = 1U << 7,
     UnfuseFma = 1U << 8,
+    NativeFma = 1U << 9,
 };
 
 bool IsTruthyEnvironmentVariable(const char* name) {
@@ -95,6 +96,9 @@ std::uint32_t ReadProfileFlagsFromEnvironment() {
     }
     if (IsTruthyEnvironmentVariable("EDEN_1195G7_UNFUSE_FMA")) {
         flags |= UnfuseFma;
+    }
+    if (IsTruthyEnvironmentVariable("EDEN_1195G7_NATIVE_FMA")) {
+        flags |= NativeFma;
     }
     return flags;
 }
@@ -309,8 +313,8 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
              "pipeline workers capped at {}; resolution and frame pacing follow UI settings; "
              "guest CPU keeps primary cores; Vulkan/background work uses shifted SMT lanes; "
              "safe CPU/cache defaults with coalesced invalidation, bounded queued invalidation, "
-             "conservative Vulkan upload barriers, WFI/fence guards, native host FMA and "
-             "sustained AVX2-class host vector policy",
+             "conservative Vulkan upload barriers, WFI/fence guards, synchronized pipeline "
+             "cache access and sustained AVX2-class host vector policy",
              onexplayer_profile_version,
              program_id,
              worker_limit);
@@ -406,7 +410,8 @@ bool PreferNativeVulkanSingleDraw() {
 }
 
 bool PreferNativeHostFMA() {
-    return IsOnexplayer1195G7ProfileActive() && !HasProfileFlag(UnfuseFma);
+    return IsOnexplayer1195G7ProfileActive() && HasProfileFlag(NativeFma) &&
+           !HasProfileFlag(UnfuseFma);
 }
 
 std::uint32_t GetVulkanDrawDispatchMask(std::uint32_t default_mask) {
@@ -476,7 +481,7 @@ std::uint32_t GetDynarmicCodeCacheSize(std::uint32_t default_size) {
         return default_size;
     }
 
-    constexpr std::uint32_t onexplayer_code_cache_size = 1024U * 1024U * 1024U;
+    constexpr std::uint32_t onexplayer_code_cache_size = 512U * 1024U * 1024U;
     return std::max(default_size, onexplayer_code_cache_size);
 #else
     return default_size;

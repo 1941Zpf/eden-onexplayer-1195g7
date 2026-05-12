@@ -9,6 +9,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <span>
 #include <thread>
 #include <vector>
@@ -508,6 +509,8 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
 }
 
 PipelineCache::~PipelineCache() {
+    workers.WaitForRequests();
+    serialization_thread.WaitForRequests();
     if (use_vulkan_pipeline_cache && !vulkan_pipeline_cache_filename.empty()) {
         SerializeVulkanPipelineCache(vulkan_pipeline_cache_filename, vulkan_pipeline_cache,
                                      CACHE_VERSION);
@@ -583,11 +586,18 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
     if (device.IsKhrPipelineExecutablePropertiesEnabled()) {
         state.statistics = std::make_unique<PipelineStatistics>(device);
     }
+    const auto queue_preload_work{[this](auto work) {
+        if (Core::GameSettings::UseThermalAwareThreadScheduling()) {
+            workers.QueuePriorityWork(std::move(work));
+        } else {
+            workers.QueueWork(std::move(work));
+        }
+    }};
     const auto load_compute{[&](std::ifstream& file, FileEnvironment env) {
         ComputePipelineCacheKey key;
         file.read(reinterpret_cast<char*>(&key), sizeof(key));
 
-        workers.QueueWork([this, key, env_ = std::move(env), &state, &callback]() mutable {
+        queue_preload_work([this, key, env_ = std::move(env), &state, &callback]() mutable {
             ShaderPools pools;
             auto pipeline{CreateComputePipeline(pools, key, env_, state.statistics.get(), false)};
             std::scoped_lock lock{state.mutex};
@@ -618,7 +628,7 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
             (key.state.dynamic_vertex_input != 0) != dynamic_features.has_dynamic_vertex_input) {
             return;
         }
-        workers.QueueWork([this, key, envs_ = std::move(envs), &state, &callback]() mutable {
+        queue_preload_work([this, key, envs_ = std::move(envs), &state, &callback]() mutable {
             ShaderPools pools;
             boost::container::static_vector<Shader::Environment*, 5> env_ptrs;
             for (auto& env : envs_) {
@@ -648,7 +658,9 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
     state.has_loaded = true;
     lock.unlock();
 
-    workers.WaitForRequests(stop_loading);
+    // The pipeline workers are reused for runtime compilation after startup. Do not stop them
+    // through the loading token; complete the work already queued for this cache generation.
+    workers.WaitForRequests();
 
     if (use_vulkan_pipeline_cache) {
         SerializeVulkanPipelineCache(vulkan_pipeline_cache_filename, vulkan_pipeline_cache,
@@ -789,8 +801,8 @@ std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipeline(
     Common::ThreadWorker* const thread_worker{build_in_parallel ? &workers : nullptr};
     return std::make_unique<GraphicsPipeline>(
         scheduler, buffer_cache, texture_cache, vulkan_pipeline_cache, &shader_notify, device,
-        descriptor_pool, guest_descriptor_queue, thread_worker, statistics, render_pass_cache, key,
-        std::move(modules), infos);
+        descriptor_pool, guest_descriptor_queue, thread_worker, statistics, render_pass_cache,
+        vulkan_pipeline_cache_mutex, key, std::move(modules), infos);
 
 } catch (const Shader::Exception& exception) {
     auto hash = key.Hash();
@@ -902,7 +914,8 @@ std::unique_ptr<ComputePipeline> PipelineCache::CreateComputePipeline(
         spv_module.SetObjectNameEXT(name.c_str());
     }
     Common::ThreadWorker* const thread_worker{build_in_parallel ? &workers : nullptr};
-    return std::make_unique<ComputePipeline>(device, vulkan_pipeline_cache, descriptor_pool,
+    return std::make_unique<ComputePipeline>(device, vulkan_pipeline_cache,
+                                             vulkan_pipeline_cache_mutex, descriptor_pool,
                                              guest_descriptor_queue, thread_worker, statistics,
                                              &shader_notify, program.info, std::move(spv_module));
 
@@ -927,6 +940,7 @@ void PipelineCache::SerializeVulkanPipelineCache(const std::filesystem::path& fi
     size_t cache_size = 0;
     std::vector<char> cache_data;
     if (pipeline_cache) {
+        std::scoped_lock lock{vulkan_pipeline_cache_mutex};
         pipeline_cache.Read(&cache_size, nullptr);
         cache_data.resize(cache_size);
         pipeline_cache.Read(&cache_size, cache_data.data());
