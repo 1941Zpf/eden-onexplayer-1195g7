@@ -317,6 +317,15 @@ void TextureCache<P>::CheckFeedbackLoop(std::span<const ImageViewInOut> views) {
                overlaps(lhs.base.layer, lhs.extent.layers, rhs.base.layer, rhs.extent.layers);
     };
 
+    const auto images_alias = [&](ImageId sampled_image_id, ImageId target_image_id) {
+        if (!sampled_image_id || !target_image_id || sampled_image_id == target_image_id) {
+            return false;
+        }
+        const auto& sampled_image = slot_images[sampled_image_id];
+        const auto& target_image = slot_images[target_image_id];
+        return sampled_image.OverlapsGPU(target_image.gpu_addr, target_image.guest_size_bytes);
+    };
+
     const auto is_active_color_feedback = [&](ImageViewId sampled_view_id, ImageId sampled_image_id,
                                               const SubresourceRange& sampled_range) {
         for (size_t i = 0; i < NUM_RT; ++i) {
@@ -335,6 +344,9 @@ void TextureCache<P>::CheckFeedbackLoop(std::span<const ImageViewInOut> views) {
                 subresources_overlap(sampled_range, target_view.range)) {
                 return true;
             }
+            if (images_alias(sampled_image_id, rt_image_id[i])) {
+                return true;
+            }
         }
         return false;
     };
@@ -348,8 +360,11 @@ void TextureCache<P>::CheckFeedbackLoop(std::span<const ImageViewInOut> views) {
         if (sampled_view_id == render_targets.depth_buffer_id) {
             return true;
         }
-        return sampled_image_id == rt_depth_image_id &&
-               subresources_overlap(sampled_range, target_view.range);
+        if (sampled_image_id == rt_depth_image_id &&
+            subresources_overlap(sampled_range, target_view.range)) {
+            return true;
+        }
+        return images_alias(sampled_image_id, rt_depth_image_id);
     };
 
     const bool requires_barrier = [&] {
