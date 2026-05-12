@@ -22,6 +22,7 @@
 #endif
 
 #include <array>
+#include <cstdlib>
 #include <cstring>
 
 #include "dynarmic/common/assert.h"
@@ -128,6 +129,15 @@ public:
 // This is threadsafe as Xbyak::Allocator does not contain any state; it is a pure interface.
 CustomXbyakAllocator s_allocator;
 
+bool AllowOnexplayer1195G7AVX512() {
+    const char* value = std::getenv("EDEN_1195G7_ALLOW_AVX512");
+    if (value == nullptr) {
+        return false;
+    }
+    return std::strcmp(value, "0") != 0 && std::strcmp(value, "false") != 0 &&
+           std::strcmp(value, "FALSE") != 0;
+}
+
 #ifdef DYNARMIC_ENABLE_NO_EXECUTE_SUPPORT
 void ProtectMemory(const void* base, size_t size, bool is_executable) {
 #    ifdef _WIN32
@@ -160,11 +170,10 @@ HostFeature GetHostFeatures() {
         features |= HostFeature::AVX;
     if (cpu_info.has(Cpu::tAVX2))
         features |= HostFeature::AVX2;
-    // OneXPlayer 1S i7-1195G7 target: avoid Dynarmic AVX-512 codegen.
+    // OneXPlayer 1S i7-1195G7 target: avoid Dynarmic AVX-512 codegen by default.
     // Tiger Lake can expose AVX-512, but in this 4C/8T 28W handheld it tends to trade
-    // short SIMD wins for much worse sustained clocks and thermal headroom.
-    constexpr bool enable_avx512_for_onexplayer_1195g7 = false;
-    if constexpr (enable_avx512_for_onexplayer_1195g7) {
+    // short SIMD wins for worse sustained clocks and thermal headroom.
+    if (AllowOnexplayer1195G7AVX512()) {
         if (cpu_info.has(Cpu::tAVX512F))
             features |= HostFeature::AVX512F;
         if (cpu_info.has(Cpu::tAVX512CD))

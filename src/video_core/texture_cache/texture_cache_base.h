@@ -166,9 +166,6 @@ public:
     /// Get the imageview from the graphics descriptor table in the specified index
     [[nodiscard]] ImageView& GetImageView(u32 index) noexcept;
 
-    /// Get the image view id from the graphics descriptor table in the specified index
-    [[nodiscard]] ImageViewId GetGraphicsImageViewId(u32 index) noexcept;
-
     /// Mark an image as modified from the GPU
     void MarkModification(ImageId id) noexcept;
 
@@ -467,7 +464,6 @@ private:
     u64 texture_bindings_serial = 0;
     u64 last_feedback_loop_serial = 0;
     u64 last_feedback_texture_serial = 0;
-    u64 last_feedback_views_signature = 0;
     bool last_feedback_loop_result = false;
     FramebufferId last_framebuffer_id{};
     u64 last_framebuffer_serial = 0;

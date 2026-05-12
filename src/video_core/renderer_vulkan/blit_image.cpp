@@ -27,6 +27,7 @@
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 #include "video_core/renderer_vulkan/vk_state_tracker.h"
+#include "video_core/renderer_vulkan/vk_sync_profile.h"
 #include "video_core/renderer_vulkan/vk_update_descriptor.h"
 #include "video_core/surface.h"
 #include "video_core/vulkan_common/vulkan_device.h"
@@ -416,13 +417,11 @@ VkExtent2D GetConversionExtent(const ImageView& src_image_view) {
 
 void TransitionImageLayout(vk::CommandBuffer& cmdbuf, VkImage image, VkImageLayout target_layout,
                            VkImageLayout source_layout = VK_IMAGE_LAYOUT_GENERAL) {
-    constexpr VkFlags flags{VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-                            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT};
     const VkImageMemoryBarrier barrier{
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .pNext = nullptr,
-        .srcAccessMask = flags,
-        .dstAccessMask = flags,
+        .srcAccessMask = SyncProfile::TextureWriteAccess,
+        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
         .oldLayout = source_layout,
         .newLayout = target_layout,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -436,8 +435,8 @@ void TransitionImageLayout(vk::CommandBuffer& cmdbuf, VkImage image, VkImageLayo
             .layerCount = 1,
         },
     };
-    cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                           0, barrier);
+    cmdbuf.PipelineBarrier(SyncProfile::TextureUseStages(), VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+                           barrier);
 }
 
 void RecordShaderReadBarrier(Scheduler& scheduler, const ImageView& image_view) {
@@ -448,10 +447,7 @@ void RecordShaderReadBarrier(Scheduler& scheduler, const ImageView& image_view) 
         const VkImageMemoryBarrier barrier{
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
             .pNext = nullptr,
-            .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
-                             VK_ACCESS_SHADER_WRITE_BIT |
-                             VK_ACCESS_TRANSFER_WRITE_BIT,
+            .srcAccessMask = SyncProfile::TextureWriteAccess,
             .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
             .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
             .newLayout = VK_IMAGE_LAYOUT_GENERAL,
@@ -460,17 +456,8 @@ void RecordShaderReadBarrier(Scheduler& scheduler, const ImageView& image_view) 
             .image = image,
             .subresourceRange = subresource_range,
         };
-        cmdbuf.PipelineBarrier(
-            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-                VK_PIPELINE_STAGE_TRANSFER_BIT |
-                VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-                VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-            0,
-            barrier);
+        cmdbuf.PipelineBarrier(SyncProfile::TextureUseStages(), VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                               0, barrier);
     });
 }
 
