@@ -8,7 +8,7 @@ $RootDir = Resolve-Path (Join-Path $ScriptDir "..\..")
 $BuildDir = Join-Path $RootDir "build-onexplayer-1195g7-021"
 $PkgDir = Join-Path $BuildDir "pkg"
 $ArtifactsDir = Join-Path $RootDir "artifacts"
-$ZipPath = Join-Path $ArtifactsDir "Eden-Windows-onexplayer-1195g7-021.zip"
+$ZipPath = Join-Path $ArtifactsDir "Eden-onexplayer-1195g7-021.zip"
 $UseBundledQt = $true
 
 function Invoke-Native {
