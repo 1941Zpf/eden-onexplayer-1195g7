@@ -67,6 +67,7 @@ std::size_t GetVulkanUploadStreamBufferSize(std::size_t default_size);
 bool UseThermalAwareThreadScheduling();
 bool ReservePrimaryCoreForVulkanSubmission();
 bool PreferNativeVulkanSingleDraw();
+bool PreferNativeHostFMA();
 std::uint32_t GetVulkanDrawDispatchMask(std::uint32_t default_mask);
 bool UseRelaxedVulkanWaitForIdle();
 bool UseGpuDirtyMemoryFastSkip();

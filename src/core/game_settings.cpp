@@ -31,7 +31,7 @@ std::atomic_size_t vulkan_pipeline_worker_limit{0};
 std::atomic_size_t queued_cache_invalidation_limit{0};
 std::atomic<std::uint64_t> gpu_cache_invalidation_coalesce_span{0};
 std::atomic<std::uint32_t> onexplayer_profile_flags{0};
-constexpr const char* onexplayer_profile_version = "020";
+constexpr const char* onexplayer_profile_version = "021";
 
 enum ProfileFlag : std::uint32_t {
     DisableProfile = 1U << 0,
@@ -42,6 +42,7 @@ enum ProfileFlag : std::uint32_t {
     UnsafeCache = 1U << 5,
     AsyncShaders = 1U << 6,
     UnsafeCpu = 1U << 7,
+    UnfuseFma = 1U << 8,
 };
 
 bool IsTruthyEnvironmentVariable(const char* name) {
@@ -92,6 +93,9 @@ std::uint32_t ReadProfileFlagsFromEnvironment() {
                                        "EDEN_TOTK_1195G7_UNSAFE_CPU")) {
         flags |= UnsafeCpu;
     }
+    if (IsTruthyEnvironmentVariable("EDEN_1195G7_UNFUSE_FMA")) {
+        flags |= UnfuseFma;
+    }
     return flags;
 }
 
@@ -131,6 +135,10 @@ void ForceCustomSetting(Setting& setting, const Value& value) {
 
 bool ShouldUse1195G7Profile() {
     return !IsProfileDisabled();
+}
+
+bool IsOnexplayer1195G7ProfileActive() {
+    return active_profile.load(std::memory_order_relaxed) == ActiveProfile::Onexplayer1195G7;
 }
 
 } // Anonymous namespace
@@ -301,8 +309,8 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
              "pipeline workers capped at {}; resolution and frame pacing follow UI settings; "
              "guest CPU keeps primary cores; Vulkan/background work uses shifted SMT lanes; "
              "safe CPU/cache defaults with coalesced invalidation, bounded queued invalidation, "
-             "conservative Vulkan upload barriers, WFI/fence guards and sustained AVX2-class "
-             "host vector policy",
+             "conservative Vulkan upload barriers, WFI/fence guards, native host FMA and "
+             "sustained AVX2-class host vector policy",
              onexplayer_profile_version,
              program_id,
              worker_limit);
@@ -373,7 +381,7 @@ void ResetOverrides() {
 
 std::size_t GetVulkanPipelineWorkerCount(std::size_t default_workers) {
     const std::size_t safe_default = std::max<std::size_t>(default_workers, 1);
-    if (active_profile.load(std::memory_order_acquire) != ActiveProfile::Onexplayer1195G7) {
+    if (!IsOnexplayer1195G7ProfileActive()) {
         return safe_default;
     }
 
@@ -386,8 +394,7 @@ std::size_t GetVulkanPipelineWorkerCount(std::size_t default_workers) {
 }
 
 bool UseThermalAwareThreadScheduling() {
-    return active_profile.load(std::memory_order_acquire) == ActiveProfile::Onexplayer1195G7 ||
-           ShouldUse1195G7Profile();
+    return IsOnexplayer1195G7ProfileActive() || ShouldUse1195G7Profile();
 }
 
 bool ReservePrimaryCoreForVulkanSubmission() {
@@ -395,11 +402,15 @@ bool ReservePrimaryCoreForVulkanSubmission() {
 }
 
 bool PreferNativeVulkanSingleDraw() {
-    return active_profile.load(std::memory_order_acquire) == ActiveProfile::Onexplayer1195G7;
+    return IsOnexplayer1195G7ProfileActive();
+}
+
+bool PreferNativeHostFMA() {
+    return IsOnexplayer1195G7ProfileActive() && !HasProfileFlag(UnfuseFma);
 }
 
 std::uint32_t GetVulkanDrawDispatchMask(std::uint32_t default_mask) {
-    if (active_profile.load(std::memory_order_acquire) != ActiveProfile::Onexplayer1195G7) {
+    if (!IsOnexplayer1195G7ProfileActive()) {
         return default_mask;
     }
 
@@ -411,22 +422,19 @@ bool UseRelaxedVulkanWaitForIdle() {
 }
 
 bool UseGpuDirtyMemoryFastSkip() {
-    return active_profile.load(std::memory_order_acquire) == ActiveProfile::Onexplayer1195G7 &&
-           !HasProfileFlag(StrictDirty);
+    return IsOnexplayer1195G7ProfileActive() && !HasProfileFlag(StrictDirty);
 }
 
 bool UseQueuedGpuCacheInvalidation() {
-    return active_profile.load(std::memory_order_acquire) == ActiveProfile::Onexplayer1195G7 &&
-           !HasProfileFlag(StrictDirty);
+    return IsOnexplayer1195G7ProfileActive() && !HasProfileFlag(StrictDirty);
 }
 
 bool UseConservativeVulkanUploadBarriers() {
-    return active_profile.load(std::memory_order_acquire) == ActiveProfile::Onexplayer1195G7;
+    return IsOnexplayer1195G7ProfileActive();
 }
 
 std::size_t GetQueuedGpuCacheInvalidationLimit(std::size_t default_limit) {
-    if (active_profile.load(std::memory_order_acquire) != ActiveProfile::Onexplayer1195G7 ||
-        HasProfileFlag(StrictDirty)) {
+    if (!IsOnexplayer1195G7ProfileActive() || HasProfileFlag(StrictDirty)) {
         return default_limit;
     }
 
@@ -435,8 +443,7 @@ std::size_t GetQueuedGpuCacheInvalidationLimit(std::size_t default_limit) {
 }
 
 std::uint64_t GetGpuCacheInvalidationCoalesceSpan(std::uint64_t default_span) {
-    if (active_profile.load(std::memory_order_acquire) != ActiveProfile::Onexplayer1195G7 ||
-        HasProfileFlag(StrictDirty)) {
+    if (!IsOnexplayer1195G7ProfileActive() || HasProfileFlag(StrictDirty)) {
         return default_span;
     }
 
@@ -447,7 +454,7 @@ std::uint64_t GetGpuCacheInvalidationCoalesceSpan(std::uint64_t default_span) {
 
 std::size_t GetTextureWorkerCount(std::size_t default_workers) {
     const std::size_t safe_default = std::max<std::size_t>(default_workers, 1);
-    if (active_profile.load(std::memory_order_acquire) != ActiveProfile::Onexplayer1195G7) {
+    if (!IsOnexplayer1195G7ProfileActive()) {
         return safe_default;
     }
 
@@ -455,7 +462,7 @@ std::size_t GetTextureWorkerCount(std::size_t default_workers) {
 }
 
 std::size_t GetVulkanUploadStreamBufferSize(std::size_t default_size) {
-    if (active_profile.load(std::memory_order_acquire) != ActiveProfile::Onexplayer1195G7) {
+    if (!IsOnexplayer1195G7ProfileActive()) {
         return default_size;
     }
 
@@ -465,7 +472,7 @@ std::size_t GetVulkanUploadStreamBufferSize(std::size_t default_size) {
 
 std::uint32_t GetDynarmicCodeCacheSize(std::uint32_t default_size) {
 #if defined(ARCHITECTURE_x86_64)
-    if (active_profile.load(std::memory_order_acquire) != ActiveProfile::Onexplayer1195G7) {
+    if (!IsOnexplayer1195G7ProfileActive()) {
         return default_size;
     }
 

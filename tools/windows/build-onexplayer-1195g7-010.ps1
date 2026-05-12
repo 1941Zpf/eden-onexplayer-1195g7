@@ -5,10 +5,10 @@ $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RootDir = Resolve-Path (Join-Path $ScriptDir "..\..")
-$BuildDir = Join-Path $RootDir "build-onexplayer-1195g7-020"
+$BuildDir = Join-Path $RootDir "build-onexplayer-1195g7-021"
 $PkgDir = Join-Path $BuildDir "pkg"
 $ArtifactsDir = Join-Path $RootDir "artifacts"
-$ZipPath = Join-Path $ArtifactsDir "Eden-Windows-onexplayer-1195g7-020.zip"
+$ZipPath = Join-Path $ArtifactsDir "Eden-Windows-onexplayer-1195g7-021.zip"
 $UseBundledQt = $true
 
 function Invoke-Native {
@@ -112,6 +112,7 @@ try {
     New-Item -ItemType Directory -Force -Path $PkgDir | Out-Null
     New-Item -ItemType Directory -Force -Path $ArtifactsDir | Out-Null
 
+    $BuildPreset = "v3"
     $compilerArgs = @()
     if (Get-Command clang-cl -ErrorAction SilentlyContinue) {
         $Onexplayer1195G7CpuFlags = @(
@@ -119,8 +120,11 @@ try {
             "/Oi",
             "/Gy",
             "/Gw",
+            "/clang:-march=x86-64-v3",
+            "/clang:-mtune=tigerlake",
             "/clang:-mprefer-vector-width=128"
         )
+        $BuildPreset = "custom"
         $Onexplayer1195G7Flags = $Onexplayer1195G7CpuFlags -join " "
         $compilerArgs = @(
             "-DCMAKE_C_COMPILER=clang-cl",
@@ -146,7 +150,7 @@ try {
         "-DYUZU_USE_QT_MULTIMEDIA=OFF",
         "-DYUZU_USE_QT_WEB_ENGINE=OFF",
         "-DYUZU_USE_BUNDLED_QT=$($UseBundledQt.ToString().ToUpperInvariant())",
-        "-DYUZU_BUILD_PRESET=v3",
+        "-DYUZU_BUILD_PRESET=$BuildPreset",
         "-DENABLE_LTO=ON",
         "-DGLSLANGVALIDATOR=$GlslangValidator"
     ) + $compilerArgs

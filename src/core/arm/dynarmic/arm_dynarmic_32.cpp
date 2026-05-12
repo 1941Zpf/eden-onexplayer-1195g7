@@ -291,7 +291,9 @@ void ArmDynarmic32::MakeJit(Common::PageTable* page_table) {
         config.fastmem_pointer = std::nullopt;
         config.fastmem_exclusive_access = false;
 #endif
-        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_UnfuseFMA;
+        if (!GameSettings::PreferNativeHostFMA()) {
+            config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_UnfuseFMA;
+        }
         config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreStandardFPCRValue;
         config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_InaccurateNaN;
         config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreGlobalMonitor;

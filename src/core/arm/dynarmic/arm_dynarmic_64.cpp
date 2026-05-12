@@ -343,7 +343,9 @@ void ArmDynarmic64::MakeJit(Common::PageTable* page_table, std::size_t address_s
         config.fastmem_pointer = std::nullopt;
         config.fastmem_exclusive_access = false;
 #endif
-        config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_UnfuseFMA;
+        if (!GameSettings::PreferNativeHostFMA()) {
+            config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_UnfuseFMA;
+        }
         config.fastmem_address_space_bits = 64;
         config.optimizations |= Dynarmic::OptimizationFlag::Unsafe_IgnoreGlobalMonitor;
         break;

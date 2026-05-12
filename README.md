@@ -24,7 +24,7 @@
     <img alt="Target hardware" src="https://img.shields.io/badge/Target-OneXPlayer%201S-1f6feb?style=flat-square">
     <img alt="CPU" src="https://img.shields.io/badge/CPU-i7--1195G7-0071c5?style=flat-square&logo=intel&logoColor=white">
     <img alt="GPU" src="https://img.shields.io/badge/GPU-Iris%20Xe-5e5ce6?style=flat-square">
-    <img alt="Focus" src="https://img.shields.io/badge/Focus-performance%20%2B%20stability-f97316?style=flat-square">
+    <img alt="Focus" src="https://img.shields.io/badge/Focus-performance%20%2B%20correctness-f97316?style=flat-square">
   </p>
 </div>
 
@@ -34,6 +34,8 @@
 
 ## English
 
+> Releases can lag behind the source tree. A packaged release may not include every optimization listed here; check the release notes for the exact contents. The full source is public, so unreleased changes can be built manually, though unreleased builds may still contain bugs.
+
 ### Performance Improvements
 
 | Area | Result |
@@ -41,6 +43,8 @@
 | Overall smoothness | Improved frame pacing and reduced heavy stutter on the target OneXPlayer 1S hardware. |
 | CPU pressure | Reduced avoidable CPU load during sustained gameplay. |
 | Thermal behavior | Lowered background heat pressure to help the i7-1195G7 hold performance more steadily under long sessions. |
+| Host compute path | Better matched CPU-side emulation work to the sustained performance behavior of the i7-1195G7. |
+| Windows release tuning | Release artifacts are tuned more closely for the target Tiger Lake / AVX2-class CPU path. |
 | Shader-related interruptions | Reduced shader-related interruption during gameplay. |
 | Graphics rendering | Improved rendering stability and reduced unnecessary overhead on Intel Iris Xe. |
 | Scene streaming workload | Reduced avoidable workload during scene and asset streaming. |
@@ -52,8 +56,6 @@
 | Game / Area | Result |
 | --- | --- |
 | Splatoon 3 | Fixed the severe full-screen flashing texture corruption seen in some scenes and angles. |
-| Splatoon 3 | Reduced remaining small-area flicker on specific surfaces or scene regions. |
-| Splatoon 3 | Fixed shader-related visual corruption affecting special texture effects. |
 | Rendering stability | Improved cases that could previously cause flashing or unstable visuals. |
 | Texture correctness | Improved correctness in complex surface and texture reuse scenes. |
 | Frame pacing | Reduced unusual stalls in several rendering-heavy situations. |
@@ -66,6 +68,8 @@
 
 ## 中文
 
+> 发布版本可能滞后于源码。打包发布版不一定包含本文列出的全部优化，具体内容请以发布说明为准。源码会完整公开，如需未发布的功能和优化，可以自行编译；但未发布版本也可能存在尚未修复的问题。
+
 ### 性能优化结果
 
 | 方向 | 结果 |
@@ -73,6 +77,8 @@
 | 整体流畅度 | 在目标 OneXPlayer 1S 硬件上提升帧时间稳定性，减少明显卡顿。 |
 | CPU 压力 | 降低持续游戏时不必要的 CPU 负载。 |
 | 温度表现 | 降低后台热压力，帮助 i7-1195G7 在长时间运行时更稳定地维持性能。 |
+| 主机计算路径 | 让 CPU 侧模拟负载更贴合 i7-1195G7 的持续性能特征。 |
+| Windows 发布调优 | 发布包更贴近目标 Tiger Lake / AVX2 级 CPU 路径进行调优。 |
 | 着色器相关中断 | 减少游戏过程中的 shader 相关中断感。 |
 | 图形渲染 | 提升 Intel Iris Xe 上的渲染稳定性，并减少不必要开销。 |
 | 场景流式加载负载 | 降低场景和资源流式加载时的不必要负载。 |
@@ -84,8 +90,6 @@
 | 游戏 / 方向 | 结果 |
 | --- | --- |
 | Splatoon 3 | 修复部分场景和角度下出现的严重满屏贴图闪烁/画面污染。 |
-| Splatoon 3 | 减轻特定表面或局部画面区域的小范围闪烁。 |
-| Splatoon 3 | 修复影响特殊贴图效果的 shader 相关画面错误。 |
 | 渲染稳定性 | 改善此前可能出现的闪烁或画面不稳定。 |
 | 纹理正确性 | 改善复杂表面和纹理复用场景下可能出现的错误贴图。 |
 | 帧时间稳定性 | 减少若干高渲染压力场景中的异常停顿。 |
