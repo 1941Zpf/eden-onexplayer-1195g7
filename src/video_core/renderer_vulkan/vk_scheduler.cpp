@@ -164,6 +164,12 @@ void Scheduler::RequestOutsideRenderPassOperationContext() {
     EndRenderPass();
 }
 
+void Scheduler::RequestFeedbackLoopBarrierContext() {
+    feedback_loop_barrier_pending = Core::GameSettings::UseConservativeVulkanUploadBarriers();
+    EndRenderPass();
+    feedback_loop_barrier_pending = false;
+}
+
 bool Scheduler::UpdateGraphicsPipeline(GraphicsPipeline* pipeline) {
     if (state.graphics_pipeline == pipeline) {
         if (pipeline && pipeline->UsesExtendedDynamicState() &&
@@ -346,6 +352,7 @@ void Scheduler::EndPendingOperations() {
 
 void Scheduler::EndRenderPass() {
         if (!state.renderpass) {
+            feedback_loop_barrier_pending = false;
             return;
         }
 
@@ -358,9 +365,14 @@ void Scheduler::EndRenderPass() {
         query_cache->CounterEnable(VideoCommon::QueryType::ZPassPixelCount64, false);
         query_cache->NotifySegment(false);
 
+        const bool use_feedback_src_barrier = feedback_loop_barrier_pending &&
+                                              Core::GameSettings::UseConservativeVulkanUploadBarriers();
+        feedback_loop_barrier_pending = false;
+
         Record([num_images = num_renderpass_images,
                        images = renderpass_images,
-                       ranges = renderpass_image_ranges](vk::CommandBuffer cmdbuf) {
+                       ranges = renderpass_image_ranges,
+                       use_feedback_src_barrier](vk::CommandBuffer cmdbuf) {
             std::array<VkImageMemoryBarrier, 9> barriers;
             for (size_t i = 0; i < num_images; ++i) {
                 const VkImageSubresourceRange& range = ranges[i];
@@ -369,15 +381,18 @@ void Scheduler::EndRenderPass() {
                                               & (VK_IMAGE_ASPECT_DEPTH_BIT
                                                  | VK_IMAGE_ASPECT_STENCIL_BIT)) != 0;
 
-                VkAccessFlags src_access = 0;
+                VkAccessFlags src_access = SyncProfile::ConservativeRenderPassSrcAccess;
+                if (!use_feedback_src_barrier) {
+                    src_access = 0;
 
-                if (is_color)
-                    src_access |= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-                else if (is_depth_stencil)
-                    src_access |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-                else
-                    src_access |= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
-                                  | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+                    if (is_color)
+                        src_access |= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                    else if (is_depth_stencil)
+                        src_access |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+                    else
+                        src_access |= VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+                                      | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+                }
 
                 barriers[i] = VkImageMemoryBarrier{
                         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -393,7 +408,10 @@ void Scheduler::EndRenderPass() {
                 };
             }
             cmdbuf.EndRenderPass();
-            cmdbuf.PipelineBarrier(SyncProfile::RenderPassSrcStages,
+            const VkPipelineStageFlags src_stages = use_feedback_src_barrier
+                                                       ? SyncProfile::ConservativeRenderPassSrcStages
+                                                       : SyncProfile::LegacyRenderPassSrcStages;
+            cmdbuf.PipelineBarrier(src_stages,
                                    SyncProfile::RenderPassDstStages(), 0, nullptr, nullptr,
                                    vk::Span(barriers.data(), num_images));
         });

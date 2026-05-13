@@ -32,10 +32,14 @@ inline constexpr VkPipelineStageFlags ConservativeTextureUseStages =
     GraphicsTextureUseStages | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
     VK_PIPELINE_STAGE_TRANSFER_BIT;
 
-inline constexpr VkPipelineStageFlags RenderPassSrcStages =
+inline constexpr VkPipelineStageFlags LegacyRenderPassSrcStages =
     VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
     VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
     VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+inline constexpr VkPipelineStageFlags ConservativeRenderPassSrcStages =
+    LegacyRenderPassSrcStages | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
 
 inline constexpr VkPipelineStageFlags LegacyRenderPassDstStages =
     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -55,6 +59,13 @@ inline constexpr VkAccessFlags TextureReadAccess =
 inline constexpr VkAccessFlags TextureWriteAccess =
     VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
     VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+
+inline constexpr VkAccessFlags LegacyRenderPassSrcAccess =
+    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+inline constexpr VkAccessFlags ConservativeRenderPassSrcAccess =
+    TextureReadAccess | TextureWriteAccess | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+    VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
 
 inline constexpr VkAccessFlags LegacyRenderPassDstAccess =
     VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
@@ -81,6 +92,16 @@ inline constexpr VkAccessFlags ConservativeRenderPassDstAccess =
 [[nodiscard]] inline VkAccessFlags PreUploadAccess() noexcept {
     return UseConservativeBarriers() ? (TextureReadAccess | TextureWriteAccess)
                                      : TextureWriteAccess;
+}
+
+[[nodiscard]] inline VkPipelineStageFlags RenderPassSrcStages() noexcept {
+    return UseConservativeBarriers() ? ConservativeRenderPassSrcStages
+                                     : LegacyRenderPassSrcStages;
+}
+
+[[nodiscard]] inline VkAccessFlags RenderPassSrcAccess() noexcept {
+    return UseConservativeBarriers() ? ConservativeRenderPassSrcAccess
+                                     : LegacyRenderPassSrcAccess;
 }
 
 [[nodiscard]] inline VkPipelineStageFlags RenderPassDstStages() noexcept {
