@@ -1,4 +1,4 @@
-name: Build Windows OneXPlayer 1195G7 023
+name: Build Windows OneXPlayer 1195G7 024
 
 on:
   workflow_dispatch:
@@ -54,7 +54,7 @@ jobs:
           Get-ChildItem "$env:GITHUB_WORKSPACE\tools\windows" -Force
           Test-Path "$env:GITHUB_WORKSPACE\tools\windows\build-onexplayer-1195g7-010.ps1"
 
-      - name: Build Eden OneXPlayer 023
+      - name: Build Eden OneXPlayer 024
         shell: pwsh
         run: |
           Set-ExecutionPolicy -Scope Process Bypass
@@ -69,7 +69,7 @@ jobs:
       - name: Verify artifact package
         shell: pwsh
         run: |
-          $artifact = Join-Path $env:GITHUB_WORKSPACE "artifacts\Eden-onexplayer-1195g7-023.zip"
+          $artifact = Join-Path $env:GITHUB_WORKSPACE "artifacts\Eden-onexplayer-1195g7-024.zip"
           if (-not (Test-Path $artifact)) {
             Write-Host "Repository root listing:"
             Get-ChildItem $env:GITHUB_WORKSPACE -Force
@@ -86,7 +86,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Eden-onexplayer-1195g7-023
-          path: ${{ github.workspace }}/artifacts/Eden-onexplayer-1195g7-023.zip
+          name: Eden-onexplayer-1195g7-024
+          path: ${{ github.workspace }}/artifacts/Eden-onexplayer-1195g7-024.zip
           if-no-files-found: error
           retention-days: 14

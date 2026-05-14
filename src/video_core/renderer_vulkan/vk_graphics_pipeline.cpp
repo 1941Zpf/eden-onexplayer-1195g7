@@ -29,7 +29,6 @@
 #include "video_core/vulkan_common/vulkan_device.h"
 #include "video_core/gpu_logging/gpu_logging.h"
 #include "common/settings.h"
-#include "core/game_settings.h"
 
 #if defined(_MSC_VER) && defined(NDEBUG)
 #define LAMBDA_FORCEINLINE [[msvc::forceinline]]
@@ -299,11 +298,7 @@ GraphicsPipeline::GraphicsPipeline(
         }
     }};
     if (worker_thread) {
-        if (Core::GameSettings::UseThermalAwareThreadScheduling()) {
-            worker_thread->QueuePriorityWork(std::move(func));
-        } else {
-            worker_thread->QueueWork(std::move(func));
-        }
+        worker_thread->QueueWork(std::move(func));
     } else {
         func();
     }

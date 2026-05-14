@@ -965,25 +965,7 @@ VkBuffer TextureCacheRuntime::GetTemporaryBuffer(size_t needed_size) {
 }
 
 void TextureCacheRuntime::BarrierFeedbackLoop() {
-    scheduler.RequestFeedbackLoopBarrierContext();
-    if (!Core::GameSettings::UseConservativeVulkanUploadBarriers()) {
-        return;
-    }
-
-    // Newer Intel Windows Vulkan drivers on Tiger Lake can keep stale attachment/texture
-    // state across feedback-loop render pass boundaries unless the dependency is submitted.
-    scheduler.Record([](vk::CommandBuffer cmdbuf) {
-        const VkMemoryBarrier feedback_barrier{
-            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-            .pNext = nullptr,
-            .srcAccessMask = SyncProfile::RenderPassSrcAccess(),
-            .dstAccessMask = SyncProfile::RenderPassDstAccess(),
-        };
-        cmdbuf.PipelineBarrier(SyncProfile::RenderPassSrcStages(),
-                               SyncProfile::RenderPassDstStages(), 0, feedback_barrier);
-    });
-
-    scheduler.Flush();
+    scheduler.RequestOutsideRenderPassOperationContext();
 }
 
 void TextureCacheRuntime::ReinterpretImage(Image& dst, Image& src,

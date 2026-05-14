@@ -24,7 +24,6 @@
 #include "video_core/vulkan_common/vulkan_wrapper.h"
 #include "video_core/gpu_logging/gpu_logging.h"
 #include "common/settings.h"
-#include "core/game_settings.h"
 
 namespace Vulkan {
 
@@ -112,11 +111,7 @@ ComputePipeline::ComputePipeline(const Device& device_, vk::PipelineCache& pipel
         }
     }};
     if (thread_worker) {
-        if (Core::GameSettings::UseThermalAwareThreadScheduling()) {
-            thread_worker->QueuePriorityWork(std::move(func));
-        } else {
-            thread_worker->QueueWork(std::move(func));
-        }
+        thread_worker->QueueWork(std::move(func));
     } else {
         func();
     }

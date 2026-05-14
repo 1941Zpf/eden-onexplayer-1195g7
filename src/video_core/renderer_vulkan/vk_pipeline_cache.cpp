@@ -376,7 +376,7 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
                   device.HasBrokenParallelShaderCompiling() ? 1ULL : GetTotalPipelineWorkers()),
               "VkPipelineBuilder", {}, Common::ThreadPriority::Normal,
               Core::GameSettings::UseThermalAwareThreadScheduling(),
-              Core::GameSettings::UseThermalAwareThreadScheduling(),
+              false,
               Core::GameSettings::UseThermalAwareThreadScheduling() ? std::size_t{1}
                                                                      : std::size_t{0}),
       serialization_thread(1,
@@ -586,18 +586,11 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
     if (device.IsKhrPipelineExecutablePropertiesEnabled()) {
         state.statistics = std::make_unique<PipelineStatistics>(device);
     }
-    const auto queue_preload_work{[this](auto work) {
-        if (Core::GameSettings::UseThermalAwareThreadScheduling()) {
-            workers.QueuePriorityWork(std::move(work));
-        } else {
-            workers.QueueWork(std::move(work));
-        }
-    }};
     const auto load_compute{[&](std::ifstream& file, FileEnvironment env) {
         ComputePipelineCacheKey key;
         file.read(reinterpret_cast<char*>(&key), sizeof(key));
 
-        queue_preload_work([this, key, env_ = std::move(env), &state, &callback]() mutable {
+        workers.QueueWork([this, key, env_ = std::move(env), &state, &callback]() mutable {
             ShaderPools pools;
             auto pipeline{CreateComputePipeline(pools, key, env_, state.statistics.get(), false)};
             std::scoped_lock lock{state.mutex};
@@ -628,7 +621,7 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
             (key.state.dynamic_vertex_input != 0) != dynamic_features.has_dynamic_vertex_input) {
             return;
         }
-        queue_preload_work([this, key, envs_ = std::move(envs), &state, &callback]() mutable {
+        workers.QueueWork([this, key, envs_ = std::move(envs), &state, &callback]() mutable {
             ShaderPools pools;
             boost::container::static_vector<Shader::Environment*, 5> env_ptrs;
             for (auto& env : envs_) {
@@ -827,8 +820,9 @@ std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipeline() {
     GetGraphicsEnvironments(environments, graphics_key.unique_hashes);
 
     main_pools.ReleaseContents();
-    auto pipeline{
-        CreateGraphicsPipeline(main_pools, graphics_key, environments.Span(), nullptr, true)};
+    const bool build_in_parallel = use_asynchronous_shaders;
+    auto pipeline{CreateGraphicsPipeline(main_pools, graphics_key, environments.Span(), nullptr,
+                                         build_in_parallel)};
     if (!pipeline || pipeline_cache_filename.empty()) {
         return pipeline;
     }
@@ -853,7 +847,8 @@ std::unique_ptr<ComputePipeline> PipelineCache::CreateComputePipeline(
     env.SetCachedSize(shader->size_bytes);
 
     main_pools.ReleaseContents();
-    auto pipeline{CreateComputePipeline(main_pools, key, env, nullptr, true)};
+    const bool build_in_parallel = use_asynchronous_shaders;
+    auto pipeline{CreateComputePipeline(main_pools, key, env, nullptr, build_in_parallel)};
     if (!pipeline || pipeline_cache_filename.empty()) {
         return pipeline;
     }

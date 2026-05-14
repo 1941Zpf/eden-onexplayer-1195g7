@@ -31,7 +31,7 @@ std::atomic_size_t vulkan_pipeline_worker_limit{0};
 std::atomic_size_t queued_cache_invalidation_limit{0};
 std::atomic<std::uint64_t> gpu_cache_invalidation_coalesce_span{0};
 std::atomic<std::uint32_t> onexplayer_profile_flags{0};
-constexpr const char* onexplayer_profile_version = "023";
+constexpr const char* onexplayer_profile_version = "024";
 
 enum ProfileFlag : std::uint32_t {
     DisableProfile = 1U << 0,
@@ -260,7 +260,7 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
     }
 
     active_profile.store(ActiveProfile::Onexplayer1195G7, std::memory_order_release);
-    const std::size_t worker_limit = ReadWorkerLimitFromEnvironment(3);
+    const std::size_t worker_limit = ReadWorkerLimitFromEnvironment(2);
     vulkan_pipeline_worker_limit.store(worker_limit, std::memory_order_release);
     queued_cache_invalidation_limit.store(64, std::memory_order_release);
     gpu_cache_invalidation_coalesce_span.store(256ULL * 1024ULL, std::memory_order_release);
@@ -313,8 +313,8 @@ bool LoadEarlyOverrides(std::uint64_t program_id) {
              "pipeline workers capped at {}; resolution and frame pacing follow UI settings; "
              "guest CPU keeps primary cores; Vulkan/background work uses shifted SMT lanes; "
              "safe CPU/cache defaults with coalesced invalidation, bounded queued invalidation, "
-             "conservative Vulkan upload/feedback barriers, WFI/fence guards, synchronized "
-             "pipeline cache access and sustained AVX2-class host vector policy",
+             "conservative Vulkan upload barriers, WFI/fence guards, low-disturbance runtime "
+             "pipeline builds and sustained AVX2-class host vector policy",
              onexplayer_profile_version,
              program_id,
              worker_limit);
